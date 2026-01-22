@@ -487,6 +487,14 @@ class ScanTUI(App):
         panel.styles.display = "block" if enabled else "none"
         hint.styles.display = "none" if enabled else "block"
         button.label = "Simple" if enabled else "Advanced"
+        try:
+            self.query_one("#mode_select", Select).disabled = not enabled
+            self.query_one("#source_select", Select).disabled = not enabled
+            self.query_one("#resolution_input", Input).disabled = not enabled
+            self.query_one("#format_select", Select).disabled = not enabled
+            self.query_one("#extra_input", Input).disabled = not enabled
+        except Exception:
+            pass
 
     def _set_select_options(self, options: Iterable[Tuple[str, str]]) -> None:
         select = self.query_one("#scanner_select", Select)
