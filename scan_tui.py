@@ -265,6 +265,7 @@ class ScanTUI(App):
         self._last_saved: Optional[Path] = None
         self._session_scans: int = 0
         self._last_scan_seconds: Optional[float] = None
+        self._scan_queued: bool = False
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -514,16 +515,28 @@ class ScanTUI(App):
         if isinstance(focused, Input):
             return
         if self._scan_lock.locked():
-            self.log_message("[yellow]Scan already in progress.[/yellow]")
+            if not self._scan_queued:
+                self._scan_queued = True
+                self.set_ready_message("Scan queued. Will scan next page after current.")
+                self.log_message("[yellow]Queued one scan.[/yellow]")
+            else:
+                self.log_message("[yellow]Scan already queued.[/yellow]")
             return
         async with self._scan_lock:
-            await self._run_scan()
+            while True:
+                ok = await self._run_scan()
+                if self._scan_queued and ok:
+                    self._scan_queued = False
+                    self.set_ready_message("Queued scan starting…")
+                    continue
+                self._scan_queued = False
+                break
 
-    async def _run_scan(self) -> None:
+    async def _run_scan(self) -> bool:
         device = self.active_device()
         if not device:
             self.log_message("[red]Select a scanner first.[/red]")
-            return
+            return False
 
         prefix_input = self.query_one("#prefix_input", Input)
         prefix = sanitize_prefix(prefix_input.value)
@@ -532,11 +545,11 @@ class ScanTUI(App):
             self.log_message("[yellow]Prefix sanitized.[/yellow]")
         if not prefix:
             self.log_message("[red]Prefix cannot be empty.[/red]")
-            return
+            return False
 
         output_dir = self._ensure_output_dir()
         if output_dir is None:
-            return
+            return False
 
         fmt = (self.query_one("#format_select", Select).value or "png").lower()
         ext = "jpg" if fmt == "jpeg" else fmt
@@ -560,7 +573,7 @@ class ScanTUI(App):
                 cmd += shlex.split(extra)
             except ValueError as exc:
                 self.log_message(f"[red]Extra options parse error:[/red] {exc}")
-                return
+                return False
 
         self.set_status(f"Scanning {filename.name}…", busy=True)
         self.log_message(f"[cyan]Scanning[/cyan] {filename.name} on {short_device(device)}")
@@ -576,13 +589,13 @@ class ScanTUI(App):
         except subprocess.TimeoutExpired:
             self.set_status("Scan timed out", busy=False)
             self.log_message("[red]Scan timed out.[/red]")
-            return
+            return False
 
         if result.returncode != 0:
             self.set_status("Scan failed", busy=False)
             error = result.stderr.strip() or result.stdout.strip() or "Unknown error"
             self.log_message(f"[red]scanimage failed:[/red] {error}")
-            return
+            return False
 
         self.set_status("Scan complete", busy=False)
         duration = monotonic() - started
@@ -606,6 +619,7 @@ class ScanTUI(App):
         self.query_one("#session_count", Static).update(str(self._session_scans))
         self._save_settings()
         self._update_next_filename()
+        return True
 
     async def action_clear_log(self) -> None:
         self.query_one("#log", RichLog).clear()
