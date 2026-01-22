@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import json
 import re
 import shlex
 import subprocess
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
 TEXTUAL_REQUIREMENT = "textual>=0.52"
+CONFIG_PATH = Path.home() / ".config" / "scan_tui" / "config.json"
 
 
 def _install_textual() -> None:
@@ -234,6 +236,7 @@ class ScanTUI(App):
         self._scan_lock = asyncio.Lock()
         self._stage: str = "select"
         self._advanced: bool = False
+        self._settings = self._load_settings()
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -254,6 +257,8 @@ class ScanTUI(App):
                 yield Input(value="scan", id="prefix_input", placeholder="scan")
                 yield Label("Output directory", classes="field-label")
                 yield Input(value="./scans", id="output_dir_input", placeholder="./scans")
+                yield Label("Next file", classes="field-label")
+                yield Static("-", id="next_file")
                 yield Label("Advanced options hidden (press A)", id="advanced_hint")
                 with Vertical(id="advanced_panel"):
                     yield Label("Format", classes="field-label")
@@ -317,6 +322,7 @@ class ScanTUI(App):
         except Exception:
             pass
         self._set_advanced(False)
+        self._apply_scan_settings()
         self._set_stage("select")
         await self.action_refresh_scanners()
 
@@ -355,6 +361,8 @@ class ScanTUI(App):
             self.set_select_status("Select a scanner to continue.")
         else:
             self._set_advanced(self._advanced)
+            self._update_scanner_detail(self.active_device())
+            self._update_next_filename()
 
     def _set_advanced(self, enabled: bool) -> None:
         self._advanced = enabled
@@ -423,6 +431,9 @@ class ScanTUI(App):
 
         options = [(f"{s.name} [{short_device(s.device)}]", s.device) for s in scanners]
         self._set_select_options(options)
+        preferred = self._settings.get("last_device")
+        if preferred and any(s.device == preferred for s in scanners):
+            self.query_one("#scanner_select", Select).value = preferred
         self.set_status(f"Found {len(scanners)} scanner(s)", busy=False)
         self.set_select_status(f"Found {len(scanners)} scanner(s).")
         self._update_scanner_detail(self.active_device())
@@ -512,6 +523,8 @@ class ScanTUI(App):
 
         self.set_status("Scan complete", busy=False)
         self.log_message(f"[green]Saved:[/green] {filename}")
+        self._save_settings()
+        self._update_next_filename()
 
     async def action_clear_log(self) -> None:
         self.query_one("#log", RichLog).clear()
@@ -524,6 +537,56 @@ class ScanTUI(App):
         if self._stage != "scan":
             return
         self._set_advanced(not self._advanced)
+
+    def _load_settings(self) -> dict:
+        try:
+            with CONFIG_PATH.open("r", encoding="utf-8") as handle:
+                return json.load(handle)
+        except FileNotFoundError:
+            return {}
+        except Exception:
+            return {}
+
+    def _save_settings(self) -> None:
+        data = {
+            "prefix": self.query_one("#prefix_input", Input).value.strip(),
+            "output_dir": self.query_one("#output_dir_input", Input).value.strip(),
+            "format": self.query_one("#format_select", Select).value or "png",
+            "resolution": self.query_one("#resolution_input", Input).value.strip(),
+            "mode": self.query_one("#mode_select", Select).value or "",
+            "source": self.query_one("#source_select", Select).value or "",
+            "extra": self.query_one("#extra_input", Input).value.strip(),
+            "last_device": self.active_device(),
+        }
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with CONFIG_PATH.open("w", encoding="utf-8") as handle:
+                json.dump(data, handle, indent=2, sort_keys=True)
+        except Exception:
+            return
+
+    def _apply_scan_settings(self) -> None:
+        settings = self._settings
+        self.query_one("#prefix_input", Input).value = settings.get("prefix", "scan")
+        self.query_one("#output_dir_input", Input).value = settings.get("output_dir", "./scans")
+        self.query_one("#format_select", Select).value = settings.get("format", "png")
+        self.query_one("#resolution_input", Input).value = settings.get("resolution", "300")
+        self.query_one("#mode_select", Select).value = settings.get("mode", "Color")
+        self.query_one("#source_select", Select).value = settings.get("source", "Flatbed")
+        self.query_one("#extra_input", Input).value = settings.get("extra", "")
+
+    def _update_next_filename(self) -> None:
+        prefix = self.query_one("#prefix_input", Input).value.strip()
+        if not prefix:
+            self.query_one("#next_file", Static).update("-")
+            return
+        output_dir_input = self.query_one("#output_dir_input", Input).value.strip()
+        output_dir = Path(output_dir_input).expanduser()
+        fmt = (self.query_one("#format_select", Select).value or "png").lower()
+        ext = "jpg" if fmt == "jpeg" else fmt
+        index = next_index(prefix, output_dir, ext)
+        filename = output_dir / f"{prefix}_{index:04d}.{ext}"
+        self.query_one("#next_file", Static).update(str(filename))
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "refresh":
@@ -547,6 +610,23 @@ class ScanTUI(App):
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "scanner_select":
             self._update_scanner_detail(event.value)
+            self._save_settings()
+        elif event.select.id == "format_select":
+            self._update_next_filename()
+            self._save_settings()
+        elif event.select.id in {"mode_select", "source_select"}:
+            self._save_settings()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id in {"prefix_input", "output_dir_input"}:
+            self._update_next_filename()
+        if event.input.id in {
+            "prefix_input",
+            "output_dir_input",
+            "resolution_input",
+            "extra_input",
+        }:
+            self._save_settings()
 
     def _focus_is_inputlike(self) -> bool:
         focused = self.focused
