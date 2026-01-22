@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import re
 import shlex
 import subprocess
 import sys
-import importlib
+import site
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
@@ -19,6 +20,15 @@ TEXTUAL_REQUIREMENT = "textual>=0.52"
 def _install_textual() -> None:
     attempts = [
         [sys.executable, "-m", "pip", "install", "--user", TEXTUAL_REQUIREMENT],
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--user",
+            "--break-system-packages",
+            TEXTUAL_REQUIREMENT,
+        ],
         [sys.executable, "-m", "pip", "install", "--break-system-packages", TEXTUAL_REQUIREMENT],
     ]
     last_error = None
@@ -39,11 +49,24 @@ def _install_textual() -> None:
     sys.exit(1)
 
 
+def _ensure_user_site_on_path() -> None:
+    user_site = site.getusersitepackages()
+    if not user_site:
+        return
+    if user_site in sys.path:
+        return
+    if Path(user_site).exists():
+        site.addsitedir(user_site)
+        sys.path.insert(0, user_site)
+
+
 try:
+    _ensure_user_site_on_path()
     import textual  # noqa: F401
 except ModuleNotFoundError:
     _install_textual()
     importlib.invalidate_caches()
+    _ensure_user_site_on_path()
     import textual  # noqa: F401
 
 from textual import events
