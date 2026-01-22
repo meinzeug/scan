@@ -289,6 +289,8 @@ class ScanTUI(App):
         self._session_scans: int = 0
         self._last_scan_seconds: Optional[float] = None
         self._scan_queued: bool = False
+        self._session_bytes: int = 0
+        self._session_total_seconds: float = 0.0
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -317,6 +319,10 @@ class ScanTUI(App):
                 yield Static("-", id="last_saved")
                 yield Label("Session scans", classes="field-label")
                 yield Static("0", id="session_count")
+                yield Label("Session total", classes="field-label")
+                yield Static("0.0 B", id="session_total")
+                yield Label("Avg time", classes="field-label")
+                yield Static("-", id="session_avg")
                 yield Label("Last scan", classes="field-label")
                 yield Static("-", id="last_scan_info")
                 yield Label("Next file", classes="field-label")
@@ -425,6 +431,10 @@ class ScanTUI(App):
             if self._last_saved:
                 self.query_one("#last_saved", Static).update(str(self._last_saved))
             self.query_one("#session_count", Static).update(str(self._session_scans))
+            self.query_one("#session_total", Static).update(format_bytes(self._session_bytes))
+            if self._session_scans:
+                avg = self._session_total_seconds / self._session_scans
+                self.query_one("#session_avg", Static).update(f"{avg:.2f}s")
             if self._last_scan_seconds is not None:
                 self.query_one("#last_scan_info", Static).update(f"{self._last_scan_seconds:.2f}s")
             try:
@@ -610,8 +620,10 @@ class ScanTUI(App):
         duration = monotonic() - started
         self._last_scan_seconds = duration
         size_info = ""
+        size_bytes = None
         try:
-            size_info = f" ({format_bytes(filename.stat().st_size)})"
+            size_bytes = filename.stat().st_size
+            size_info = f" ({format_bytes(size_bytes)})"
         except Exception:
             size_info = ""
         self.log_message(f"[green]Saved:[/green] {filename}{size_info} in {duration:.2f}s")
@@ -626,9 +638,15 @@ class ScanTUI(App):
         self.set_ready_message("Ready for next page. Press Space.")
         self._session_scans += 1
         self.query_one("#session_count", Static).update(str(self._session_scans))
+        if size_bytes is not None:
+            self._session_bytes += size_bytes
+            self.query_one("#session_total", Static).update(format_bytes(self._session_bytes))
+        self._session_total_seconds += duration
+        avg_time = self._session_total_seconds / self._session_scans
+        self.query_one("#session_avg", Static).update(f"{avg_time:.2f}s")
         self._append_history_entry(
             filename=filename,
-            size_bytes=filename.stat().st_size if filename.exists() else None,
+            size_bytes=size_bytes,
             duration=duration,
         )
         self._save_settings()
