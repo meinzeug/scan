@@ -273,6 +273,9 @@ class ScanTUI(App):
         ("d", "cycle_resolution", "Cycle DPI"),
         ("o", "toggle_source", "Toggle Source"),
         ("m", "toggle_format", "Toggle Format"),
+        ("1", "preset_doc", "Preset Doc"),
+        ("2", "preset_photo", "Preset Photo"),
+        ("3", "preset_draft", "Preset Draft"),
     ]
 
     def __init__(self) -> None:
@@ -354,7 +357,7 @@ class ScanTUI(App):
                 with Horizontal(id="status_bar"):
                     yield Label("Idle", id="status_label")
                     yield LoadingIndicator(id="spinner")
-                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  T date  G gray  D dpi  O source  M format  S scan  L log", id="hint_label")
+                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  T date  1/2/3 presets  G gray  D dpi  O source  M format  S scan  L log", id="hint_label")
                 yield RichLog(id="log", highlight=True)
         yield Footer()
 
@@ -726,6 +729,31 @@ class ScanTUI(App):
         self._update_next_filename()
         self._save_settings()
         self.log_message(f"[blue]Format:[/blue] {new_value.upper()}")
+
+    def _apply_preset(self, label: str, resolution: int, mode: str, fmt: str) -> None:
+        if self._focus_is_inputlike():
+            return
+        self.query_one("#resolution_input", Input).value = str(resolution)
+        self.query_one("#mode_select", Select).value = mode
+        self.query_one("#format_select", Select).value = fmt
+        self._update_next_filename()
+        self._save_settings()
+        self.log_message(f"[magenta]Preset:[/magenta] {label}")
+
+    async def action_preset_doc(self) -> None:
+        if self._stage != "scan":
+            return
+        self._apply_preset("Doc (300dpi Gray PNG)", 300, "Gray", "png")
+
+    async def action_preset_photo(self) -> None:
+        if self._stage != "scan":
+            return
+        self._apply_preset("Photo (600dpi Color PNG)", 600, "Color", "png")
+
+    async def action_preset_draft(self) -> None:
+        if self._stage != "scan":
+            return
+        self._apply_preset("Draft (150dpi Gray PNG)", 150, "Gray", "png")
 
     def _append_history_entry(self, filename: Path, size_bytes: Optional[int], duration: float) -> None:
         try:
