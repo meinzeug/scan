@@ -21,6 +21,9 @@ from time import monotonic
 TEXTUAL_REQUIREMENT = "textual>=0.52"
 CONFIG_PATH = Path.home() / ".config" / "scan_tui" / "config.json"
 RESOLUTION_PRESETS = [150, 300, 600]
+FORMAT_OPTIONS = ["png", "jpeg", "tiff", "pdf", "pnm"]
+MODE_OPTIONS = ["", "Color", "Gray", "Lineart"]
+SOURCE_OPTIONS = ["", "Flatbed", "ADF", "ADF Duplex"]
 
 
 def _install_textual() -> None:
@@ -260,6 +263,8 @@ class ScanTUI(App):
         ("t", "set_date_prefix", "Date Prefix"),
         ("g", "toggle_gray", "Toggle Gray"),
         ("d", "cycle_resolution", "Cycle DPI"),
+        ("o", "toggle_source", "Toggle Source"),
+        ("m", "toggle_format", "Toggle Format"),
     ]
 
     def __init__(self) -> None:
@@ -309,13 +314,7 @@ class ScanTUI(App):
                 with Vertical(id="advanced_panel"):
                     yield Label("Format", classes="field-label")
                     yield Select(
-                        options=[
-                            ("PNG", "png"),
-                            ("JPEG", "jpeg"),
-                            ("TIFF", "tiff"),
-                            ("PDF", "pdf"),
-                            ("PNM", "pnm"),
-                        ],
+                        options=[(value.upper(), value) for value in FORMAT_OPTIONS],
                         id="format_select",
                         value="png",
                     )
@@ -323,23 +322,13 @@ class ScanTUI(App):
                     yield Input(value="300", id="resolution_input", placeholder="300")
                     yield Label("Mode", classes="field-label")
                     yield Select(
-                        options=[
-                            ("Default", ""),
-                            ("Color", "Color"),
-                            ("Gray", "Gray"),
-                            ("Lineart", "Lineart"),
-                        ],
+                        options=[("Default", "")] + [(value, value) for value in MODE_OPTIONS if value],
                         id="mode_select",
                         value="Color",
                     )
                     yield Label("Source", classes="field-label")
                     yield Select(
-                        options=[
-                            ("Default", ""),
-                            ("Flatbed", "Flatbed"),
-                            ("ADF", "ADF"),
-                            ("ADF Duplex", "ADF Duplex"),
-                        ],
+                        options=[("Default", "")] + [(value, value) for value in SOURCE_OPTIONS if value],
                         id="source_select",
                         value="Flatbed",
                     )
@@ -357,7 +346,7 @@ class ScanTUI(App):
                 with Horizontal(id="status_bar"):
                     yield Label("Idle", id="status_label")
                     yield LoadingIndicator(id="spinner")
-                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  T date  G gray  D dpi  S scan  L log", id="hint_label")
+                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  T date  G gray  D dpi  O source  M format  S scan  L log", id="hint_label")
                 yield RichLog(id="log", highlight=True)
         yield Footer()
 
@@ -692,6 +681,38 @@ class ScanTUI(App):
         input_widget.value = str(new_value)
         self._save_settings()
         self.log_message(f"[blue]Resolution:[/blue] {new_value} DPI")
+
+    async def action_toggle_source(self) -> None:
+        if self._stage != "scan":
+            return
+        source_select = self.query_one("#source_select", Select)
+        options = SOURCE_OPTIONS
+        current = source_select.value or ""
+        if current in options:
+            idx = options.index(current)
+            new_value = options[(idx + 1) % len(options)]
+        else:
+            new_value = options[0] if options else ""
+        source_select.value = new_value
+        self._save_settings()
+        label = new_value if new_value else "Default"
+        self.log_message(f"[blue]Source:[/blue] {label}")
+
+    async def action_toggle_format(self) -> None:
+        if self._stage != "scan":
+            return
+        format_select = self.query_one("#format_select", Select)
+        options = FORMAT_OPTIONS
+        current = format_select.value or ""
+        if current in options:
+            idx = options.index(current)
+            new_value = options[(idx + 1) % len(options)]
+        else:
+            new_value = options[0] if options else "png"
+        format_select.value = new_value
+        self._update_next_filename()
+        self._save_settings()
+        self.log_message(f"[blue]Format:[/blue] {new_value.upper()}")
 
     def _load_settings(self) -> dict:
         try:
