@@ -92,7 +92,7 @@ class ScannerInfo:
     raw: str
 
 
-SCAN_LINE_RE = re.compile(r"device\\s+(.+?)\\s+is\\s+(.+)")
+SCAN_LINE_RE = re.compile(r"device\s+(.+?)\s+is\s+(.+)")
 
 
 def parse_scanimage_list(output: str) -> List[ScannerInfo]:
@@ -301,7 +301,13 @@ class ScanTUI(App):
     def active_device(self) -> Optional[str]:
         select = self.query_one("#scanner_select", Select)
         value = select.value
-        return value if value else None
+        if not value:
+            return None
+        if value is Select.BLANK:
+            return None
+        if value.__class__.__name__ == "NoSelection":
+            return None
+        return str(value)
 
     def set_status(self, message: str, busy: bool = False) -> None:
         self.query_one("#status_label", Label).update(message)
