@@ -276,6 +276,8 @@ class ScanTUI(App):
         ("1", "preset_doc", "Preset Doc"),
         ("2", "preset_photo", "Preset Photo"),
         ("3", "preset_draft", "Preset Draft"),
+        ("v", "open_last", "Open Last"),
+        ("u", "toggle_auto_continue", "Auto Continue"),
     ]
 
     def __init__(self) -> None:
@@ -291,6 +293,7 @@ class ScanTUI(App):
         self._scan_queued: bool = False
         self._session_bytes: int = 0
         self._session_total_seconds: float = 0.0
+        self._auto_continue_single: bool = bool(self._settings.get("auto_continue_single", True))
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -303,6 +306,7 @@ class ScanTUI(App):
                     yield Button("Refresh", id="refresh", variant="primary")
                     yield Button("Continue", id="continue_button", variant="success")
                 yield Label("Select a scanner to continue.", id="select_status")
+                yield Label("Auto-continue: On (U)", id="auto_continue_label")
             with Vertical(id="scan_panel"):
                 yield Static("Scan Settings", classes="section-title")
                 yield Label("Selected scanner", classes="field-label")
@@ -363,7 +367,7 @@ class ScanTUI(App):
                 with Horizontal(id="status_bar"):
                     yield Label("Idle", id="status_label")
                     yield LoadingIndicator(id="spinner")
-                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  T date  1/2/3 presets  G gray  D dpi  O source  M format  S scan  L log", id="hint_label")
+                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  T date  1/2/3 presets  G gray  D dpi  O source  M format  V view  S scan  L log", id="hint_label")
                 yield RichLog(id="log", highlight=True)
         yield Footer()
 
@@ -408,6 +412,8 @@ class ScanTUI(App):
 
     def set_select_status(self, message: str) -> None:
         self.query_one("#select_status", Label).update(message)
+        auto_label = "On" if self._auto_continue_single else "Off"
+        self.query_one("#auto_continue_label", Label).update(f"Auto-continue: {auto_label} (U)")
 
     def _set_stage(self, stage: str) -> None:
         self._stage = stage
@@ -515,6 +521,8 @@ class ScanTUI(App):
         self.set_status(f"Found {len(scanners)} scanner(s)", busy=False)
         self.set_select_status(f"Found {len(scanners)} scanner(s).")
         self._update_scanner_detail(self.active_device())
+        if self._auto_continue_single and len(scanners) == 1 and self._stage == "select":
+            self._set_stage("scan")
 
     def _update_scanner_detail(self, device: Optional[str]) -> None:
         detail = self.query_one("#selected_scanner", Static)
@@ -748,6 +756,27 @@ class ScanTUI(App):
         self._save_settings()
         self.log_message(f"[blue]Format:[/blue] {new_value.upper()}")
 
+    async def action_open_last(self) -> None:
+        if self._stage != "scan":
+            return
+        if not self._last_saved or not self._last_saved.exists():
+            self.log_message("[yellow]No last scan to open.[/yellow]")
+            return
+        try:
+            await asyncio.to_thread(subprocess.run, ["xdg-open", str(self._last_saved)], check=False)
+            self.log_message(f"[green]Opened:[/green] {self._last_saved}")
+        except FileNotFoundError:
+            self.log_message("[red]xdg-open not found.[/red]")
+        except Exception as exc:
+            self.log_message(f"[red]Failed to open file:[/red] {exc}")
+
+    async def action_toggle_auto_continue(self) -> None:
+        self._auto_continue_single = not self._auto_continue_single
+        self._save_settings()
+        self.set_select_status("Select a scanner to continue.")
+        state = "On" if self._auto_continue_single else "Off"
+        self.log_message(f"[blue]Auto-continue:[/blue] {state}")
+
     def _apply_preset(self, label: str, resolution: int, mode: str, fmt: str) -> None:
         if self._focus_is_inputlike():
             return
@@ -810,6 +839,7 @@ class ScanTUI(App):
             "extra": self.query_one("#extra_input", Input).value.strip(),
             "last_device": self.active_device(),
             "advanced": self._advanced,
+            "auto_continue_single": self._auto_continue_single,
         }
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -828,6 +858,7 @@ class ScanTUI(App):
         self.query_one("#source_select", Select).value = settings.get("source", "Flatbed")
         self.query_one("#extra_input", Input).value = settings.get("extra", "")
         self._advanced = bool(settings.get("advanced", False))
+        self._auto_continue_single = bool(settings.get("auto_continue_single", True))
         self._update_free_space()
 
     def _output_dir_path(self) -> Optional[Path]:
