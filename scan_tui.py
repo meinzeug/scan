@@ -287,6 +287,7 @@ class ScanTUI(App):
         ("y", "set_date_dir", "Date Dir"),
         ("h", "show_help", "Help"),
         ("k", "toggle_beep", "Toggle Beep"),
+        ("z", "toggle_log", "Toggle Log"),
     ]
 
     def __init__(self) -> None:
@@ -306,6 +307,7 @@ class ScanTUI(App):
         self._last_error: Optional[str] = None
         self._last_scan_time: Optional[str] = None
         self._beep_on: bool = bool(self._settings.get("beep_on", True))
+        self._log_visible: bool = bool(self._settings.get("log_visible", True))
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -385,7 +387,7 @@ class ScanTUI(App):
                 with Horizontal(id="status_bar"):
                     yield Label("Idle", id="status_label")
                     yield LoadingIndicator(id="spinner")
-                    yield Label("H help  ↑/↓ focus  Enter/Space scan  P prefix  T date  Y dir  1/2/3 presets  G gray  D dpi  O source  M format  V view  E dir  K beep  X clear err  S scan  L log", id="hint_label")
+                    yield Label("H help  Z log  ↑/↓ focus  Enter/Space scan  P prefix  T date  Y dir  1/2/3 presets  G gray  D dpi  O source  M format  V view  E dir  K beep  X clear err  S scan  L log", id="hint_label")
                 yield RichLog(id="log", highlight=True)
         yield Footer()
 
@@ -449,6 +451,10 @@ class ScanTUI(App):
         label = "On (K)" if self._beep_on else "Off (K)"
         self.query_one("#beep_status", Static).update(label)
 
+    def _apply_log_visibility(self) -> None:
+        log = self.query_one("#log", RichLog)
+        log.styles.display = "block" if self._log_visible else "none"
+
     def set_select_status(self, message: str) -> None:
         self.query_one("#select_status", Label).update(message)
         auto_label = "On" if self._auto_continue_single else "Off"
@@ -474,6 +480,7 @@ class ScanTUI(App):
             self._update_next_filename()
             self.set_ready_message("Place next page and press Space.")
             self.set_beep_status()
+            self._apply_log_visibility()
             if self._last_saved:
                 self.query_one("#last_saved", Static).update(str(self._last_saved))
             self._update_session_stats()
@@ -873,7 +880,7 @@ class ScanTUI(App):
         self.log_message("Space/Enter: Scan   P: Prefix   T: Date prefix   Y: Date dir")
         self.log_message("1: Doc preset  2: Photo preset  3: Draft preset")
         self.log_message("G: Gray toggle  D: DPI cycle  O: Source cycle  M: Format cycle")
-        self.log_message("V: Open last  E: Open dir  K: Beep  X: Clear error  U: Auto-continue")
+        self.log_message("V: Open last  E: Open dir  K: Beep  Z: Log  X: Clear error  U: Auto-continue")
 
     async def action_toggle_beep(self) -> None:
         if self._stage != "scan":
@@ -883,6 +890,15 @@ class ScanTUI(App):
         self._save_settings()
         state = "On" if self._beep_on else "Off"
         self.log_message(f"[blue]Beep:[/blue] {state}")
+
+    async def action_toggle_log(self) -> None:
+        if self._stage != "scan":
+            return
+        self._log_visible = not self._log_visible
+        self._apply_log_visibility()
+        self._save_settings()
+        state = "Shown" if self._log_visible else "Hidden"
+        self.log_message(f"[blue]Log:[/blue] {state}")
 
     def _apply_preset(self, label: str, resolution: int, mode: str, fmt: str) -> None:
         if self._focus_is_inputlike():
@@ -948,6 +964,7 @@ class ScanTUI(App):
             "advanced": self._advanced,
             "auto_continue_single": self._auto_continue_single,
             "beep_on": self._beep_on,
+            "log_visible": self._log_visible,
         }
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -968,6 +985,7 @@ class ScanTUI(App):
         self._advanced = bool(settings.get("advanced", False))
         self._auto_continue_single = bool(settings.get("auto_continue_single", True))
         self._beep_on = bool(settings.get("beep_on", True))
+        self._log_visible = bool(settings.get("log_visible", True))
         self._update_free_space()
 
     def _output_dir_path(self) -> Optional[Path]:
