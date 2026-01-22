@@ -286,6 +286,7 @@ class ScanTUI(App):
         ("x", "clear_last_error", "Clear Error"),
         ("y", "set_date_dir", "Date Dir"),
         ("h", "show_help", "Help"),
+        ("k", "toggle_beep", "Toggle Beep"),
     ]
 
     def __init__(self) -> None:
@@ -304,6 +305,7 @@ class ScanTUI(App):
         self._auto_continue_single: bool = bool(self._settings.get("auto_continue_single", True))
         self._last_error: Optional[str] = None
         self._last_scan_time: Optional[str] = None
+        self._beep_on: bool = bool(self._settings.get("beep_on", True))
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -329,6 +331,8 @@ class ScanTUI(App):
                 yield Static("-", id="free_space")
                 yield Label("Ready", classes="field-label")
                 yield Static("Place next page and press Space.", id="ready_label")
+                yield Label("Beep", classes="field-label")
+                yield Static("On (K)", id="beep_status")
                 yield Label("Last saved", classes="field-label")
                 yield Static("-", id="last_saved")
                 yield Label("Session scans", classes="field-label")
@@ -381,7 +385,7 @@ class ScanTUI(App):
                 with Horizontal(id="status_bar"):
                     yield Label("Idle", id="status_label")
                     yield LoadingIndicator(id="spinner")
-                    yield Label("H help  ↑/↓ focus  Enter/Space scan  P prefix  T date  Y dir  1/2/3 presets  G gray  D dpi  O source  M format  V view  E dir  X clear err  S scan  L log", id="hint_label")
+                    yield Label("H help  ↑/↓ focus  Enter/Space scan  P prefix  T date  Y dir  1/2/3 presets  G gray  D dpi  O source  M format  V view  E dir  K beep  X clear err  S scan  L log", id="hint_label")
                 yield RichLog(id="log", highlight=True)
         yield Footer()
 
@@ -441,6 +445,10 @@ class ScanTUI(App):
     def set_ready_message(self, message: str) -> None:
         self.query_one("#ready_label", Static).update(message)
 
+    def set_beep_status(self) -> None:
+        label = "On (K)" if self._beep_on else "Off (K)"
+        self.query_one("#beep_status", Static).update(label)
+
     def set_select_status(self, message: str) -> None:
         self.query_one("#select_status", Label).update(message)
         auto_label = "On" if self._auto_continue_single else "Off"
@@ -465,6 +473,7 @@ class ScanTUI(App):
             self._update_scanner_detail(self.active_device())
             self._update_next_filename()
             self.set_ready_message("Place next page and press Space.")
+            self.set_beep_status()
             if self._last_saved:
                 self.query_one("#last_saved", Static).update(str(self._last_saved))
             self._update_session_stats()
@@ -680,11 +689,12 @@ class ScanTUI(App):
         except Exception:
             size_info = ""
         self.log_message(f"[green]Saved:[/green] {filename}{size_info} in {duration:.2f}s")
-        try:
-            sys.stdout.write("\a")
-            sys.stdout.flush()
-        except Exception:
-            pass
+        if self._beep_on:
+            try:
+                sys.stdout.write("\a")
+                sys.stdout.flush()
+            except Exception:
+                pass
         self._last_saved = filename
         self.query_one("#last_saved", Static).update(f"{filename}{size_info}")
         self.query_one("#last_scan_info", Static).update(f"{duration:.2f}s{size_info}")
@@ -863,7 +873,16 @@ class ScanTUI(App):
         self.log_message("Space/Enter: Scan   P: Prefix   T: Date prefix   Y: Date dir")
         self.log_message("1: Doc preset  2: Photo preset  3: Draft preset")
         self.log_message("G: Gray toggle  D: DPI cycle  O: Source cycle  M: Format cycle")
-        self.log_message("V: Open last  E: Open dir  X: Clear error  U: Auto-continue")
+        self.log_message("V: Open last  E: Open dir  K: Beep  X: Clear error  U: Auto-continue")
+
+    async def action_toggle_beep(self) -> None:
+        if self._stage != "scan":
+            return
+        self._beep_on = not self._beep_on
+        self.set_beep_status()
+        self._save_settings()
+        state = "On" if self._beep_on else "Off"
+        self.log_message(f"[blue]Beep:[/blue] {state}")
 
     def _apply_preset(self, label: str, resolution: int, mode: str, fmt: str) -> None:
         if self._focus_is_inputlike():
@@ -928,6 +947,7 @@ class ScanTUI(App):
             "last_device": self.active_device(),
             "advanced": self._advanced,
             "auto_continue_single": self._auto_continue_single,
+            "beep_on": self._beep_on,
         }
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -947,6 +967,7 @@ class ScanTUI(App):
         self.query_one("#extra_input", Input).value = settings.get("extra", "")
         self._advanced = bool(settings.get("advanced", False))
         self._auto_continue_single = bool(settings.get("auto_continue_single", True))
+        self._beep_on = bool(settings.get("beep_on", True))
         self._update_free_space()
 
     def _output_dir_path(self) -> Optional[Path]:
