@@ -144,6 +144,10 @@ def sanitize_prefix(value: str) -> str:
     return cleaned
 
 
+def is_date_dir(name: str) -> bool:
+    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", name))
+
+
 def next_index(prefix: str, output_dir: Path, ext: str) -> int:
     pattern = re.compile(rf"^{re.escape(prefix)}_(\d{{4}}).*\.{re.escape(ext)}$", re.IGNORECASE)
     max_idx = 0
@@ -280,6 +284,7 @@ class ScanTUI(App):
         ("u", "toggle_auto_continue", "Auto Continue"),
         ("e", "open_output_dir", "Open Output Dir"),
         ("x", "clear_last_error", "Clear Error"),
+        ("y", "set_date_dir", "Date Dir"),
     ]
 
     def __init__(self) -> None:
@@ -375,7 +380,7 @@ class ScanTUI(App):
                 with Horizontal(id="status_bar"):
                     yield Label("Idle", id="status_label")
                     yield LoadingIndicator(id="spinner")
-                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  T date  1/2/3 presets  G gray  D dpi  O source  M format  V view  E dir  X clear err  S scan  L log", id="hint_label")
+                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  T date  Y dir  1/2/3 presets  G gray  D dpi  O source  M format  V view  E dir  X clear err  S scan  L log", id="hint_label")
                 yield RichLog(id="log", highlight=True)
         yield Footer()
 
@@ -827,6 +832,20 @@ class ScanTUI(App):
 
     async def action_clear_last_error(self) -> None:
         self.set_last_error("-")
+
+    async def action_set_date_dir(self) -> None:
+        if self._stage != "scan":
+            return
+        output_input = self.query_one("#output_dir_input", Input)
+        base_path = Path(output_input.value.strip() or "./scans").expanduser()
+        if is_date_dir(base_path.name):
+            base_path = base_path.parent
+        dated = base_path / datetime.now().strftime("%Y-%m-%d")
+        output_input.value = str(dated)
+        self._update_free_space()
+        self._update_next_filename()
+        self._save_settings()
+        self.log_message(f"[blue]Output dir:[/blue] {dated}")
 
     def _apply_preset(self, label: str, resolution: int, mode: str, fmt: str) -> None:
         if self._focus_is_inputlike():
