@@ -124,6 +124,14 @@ def safe_int(value: str, default: int) -> int:
         return default
 
 
+def sanitize_prefix(value: str) -> str:
+    cleaned = value.strip().replace(" ", "_")
+    cleaned = cleaned.replace("/", "_").replace("\\", "_")
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", cleaned)
+    cleaned = cleaned.strip("._-")
+    return cleaned
+
+
 def next_index(prefix: str, output_dir: Path, ext: str) -> int:
     pattern = re.compile(rf"^{re.escape(prefix)}_(\d{{4}}).*\.{re.escape(ext)}$", re.IGNORECASE)
     max_idx = 0
@@ -483,14 +491,18 @@ class ScanTUI(App):
             self.log_message("[red]Select a scanner first.[/red]")
             return
 
-        prefix = self.query_one("#prefix_input", Input).value.strip()
+        prefix_input = self.query_one("#prefix_input", Input)
+        prefix = sanitize_prefix(prefix_input.value)
+        if prefix != prefix_input.value:
+            prefix_input.value = prefix
+            self.log_message("[yellow]Prefix sanitized.[/yellow]")
         if not prefix:
             self.log_message("[red]Prefix cannot be empty.[/red]")
             return
 
-        output_dir_input = self.query_one("#output_dir_input", Input).value.strip()
-        output_dir = Path(output_dir_input).expanduser()
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = self._ensure_output_dir()
+        if output_dir is None:
+            return
 
         fmt = (self.query_one("#format_select", Select).value or "png").lower()
         ext = "jpg" if fmt == "jpeg" else fmt
@@ -539,6 +551,11 @@ class ScanTUI(App):
 
         self.set_status("Scan complete", busy=False)
         self.log_message(f"[green]Saved:[/green] {filename}")
+        try:
+            sys.stdout.write("\a")
+            sys.stdout.flush()
+        except Exception:
+            pass
         self._last_saved = filename
         self.query_one("#last_saved", Static).update(str(filename))
         self.set_ready_message("Ready for next page. Press Space.")
@@ -600,13 +617,29 @@ class ScanTUI(App):
         self.query_one("#source_select", Select).value = settings.get("source", "Flatbed")
         self.query_one("#extra_input", Input).value = settings.get("extra", "")
 
+    def _ensure_output_dir(self) -> Optional[Path]:
+        output_dir_input = self.query_one("#output_dir_input", Input).value.strip()
+        if not output_dir_input:
+            self.log_message("[red]Output directory cannot be empty.[/red]")
+            return None
+        output_dir = Path(output_dir_input).expanduser()
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            self.log_message(f"[red]Failed to create output dir:[/red] {exc}")
+            return None
+        return output_dir
+
     def _update_next_filename(self) -> None:
-        prefix = self.query_one("#prefix_input", Input).value.strip()
+        prefix_raw = self.query_one("#prefix_input", Input).value
+        prefix = sanitize_prefix(prefix_raw)
         if not prefix:
             self.query_one("#next_file", Static).update("-")
             return
-        output_dir_input = self.query_one("#output_dir_input", Input).value.strip()
-        output_dir = Path(output_dir_input).expanduser()
+        output_dir = self._ensure_output_dir()
+        if output_dir is None:
+            self.query_one("#next_file", Static).update("-")
+            return
         fmt = (self.query_one("#format_select", Select).value or "png").lower()
         ext = "jpg" if fmt == "jpeg" else fmt
         index = next_index(prefix, output_dir, ext)
@@ -705,6 +738,20 @@ class ScanTUI(App):
                 return
             event.stop()
             await self.action_scan()
+            return
+
+        if event.key == "enter":
+            if self._focus_is_inputlike():
+                return
+            event.stop()
+            if self._stage == "select":
+                device = self.active_device()
+                if device:
+                    self._set_stage("scan")
+                else:
+                    self.set_select_status("Select a scanner to continue.")
+            else:
+                await self.action_scan()
 
 
 if __name__ == "__main__":
