@@ -285,6 +285,7 @@ class ScanTUI(App):
         ("e", "open_output_dir", "Open Output Dir"),
         ("x", "clear_last_error", "Clear Error"),
         ("y", "set_date_dir", "Date Dir"),
+        ("h", "show_help", "Help"),
     ]
 
     def __init__(self) -> None:
@@ -380,7 +381,7 @@ class ScanTUI(App):
                 with Horizontal(id="status_bar"):
                     yield Label("Idle", id="status_label")
                     yield LoadingIndicator(id="spinner")
-                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  T date  Y dir  1/2/3 presets  G gray  D dpi  O source  M format  V view  E dir  X clear err  S scan  L log", id="hint_label")
+                    yield Label("H help  ↑/↓ focus  Enter/Space scan  P prefix  T date  Y dir  1/2/3 presets  G gray  D dpi  O source  M format  V view  E dir  X clear err  S scan  L log", id="hint_label")
                 yield RichLog(id="log", highlight=True)
         yield Footer()
 
@@ -846,6 +847,15 @@ class ScanTUI(App):
         self._update_next_filename()
         self._save_settings()
         self.log_message(f"[blue]Output dir:[/blue] {dated}")
+
+    async def action_show_help(self) -> None:
+        if self._stage != "scan":
+            return
+        self.log_message("[bold]Keyboard cheatsheet[/bold]")
+        self.log_message("Space/Enter: Scan   P: Prefix   T: Date prefix   Y: Date dir")
+        self.log_message("1: Doc preset  2: Photo preset  3: Draft preset")
+        self.log_message("G: Gray toggle  D: DPI cycle  O: Source cycle  M: Format cycle")
+        self.log_message("V: Open last  E: Open dir  X: Clear error  U: Auto-continue")
 
     def _apply_preset(self, label: str, resolution: int, mode: str, fmt: str) -> None:
         if self._focus_is_inputlike():
