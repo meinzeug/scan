@@ -92,7 +92,7 @@ class ScannerInfo:
     raw: str
 
 
-SCAN_LINE_RE = re.compile(r"device '(.+?)' is (.+)")
+SCAN_LINE_RE = re.compile(r"device\\s+[`'](.+?)[`']\\s+is\\s+(.+)")
 
 
 def parse_scanimage_list(output: str) -> List[ScannerInfo]:
@@ -307,13 +307,14 @@ class ScanTUI(App):
 
     def _set_select_options(self, options: Iterable[Tuple[str, str]]) -> None:
         select = self.query_one("#scanner_select", Select)
+        options_list = list(options)
         try:
-            select.set_options(options)
+            select.set_options(options_list)
         except AttributeError:
-            select.options = list(options)
-        if select.options:
+            select.options = options_list
+        if options_list:
             if not select.value:
-                select.value = select.options[0][1]
+                select.value = options_list[0][1]
         else:
             select.value = None
 
