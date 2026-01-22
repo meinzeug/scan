@@ -8,6 +8,7 @@ import importlib
 import json
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import site
@@ -287,6 +288,8 @@ class ScanTUI(App):
                 yield Input(value="scan", id="prefix_input", placeholder="scan")
                 yield Label("Output directory", classes="field-label")
                 yield Input(value="./scans", id="output_dir_input", placeholder="./scans")
+                yield Label("Free space", classes="field-label")
+                yield Static("-", id="free_space")
                 yield Label("Ready", classes="field-label")
                 yield Static("Place next page and press Space.", id="ready_label")
                 yield Label("Last saved", classes="field-label")
@@ -691,6 +694,7 @@ class ScanTUI(App):
         self.query_one("#source_select", Select).value = settings.get("source", "Flatbed")
         self.query_one("#extra_input", Input).value = settings.get("extra", "")
         self._advanced = bool(settings.get("advanced", False))
+        self._update_free_space()
 
     def _ensure_output_dir(self) -> Optional[Path]:
         output_dir_input = self.query_one("#output_dir_input", Input).value.strip()
@@ -703,7 +707,21 @@ class ScanTUI(App):
         except Exception as exc:
             self.log_message(f"[red]Failed to create output dir:[/red] {exc}")
             return None
+        self._update_free_space(output_dir)
         return output_dir
+
+    def _update_free_space(self, output_dir: Optional[Path] = None) -> None:
+        try:
+            if output_dir is None:
+                output_dir_input = self.query_one("#output_dir_input", Input).value.strip()
+                if not output_dir_input:
+                    self.query_one("#free_space", Static).update("-")
+                    return
+                output_dir = Path(output_dir_input).expanduser()
+            usage = shutil.disk_usage(str(output_dir))
+            self.query_one("#free_space", Static).update(format_bytes(usage.free))
+        except Exception:
+            self.query_one("#free_space", Static).update("-")
 
     def _update_next_filename(self) -> None:
         prefix_raw = self.query_one("#prefix_input", Input).value
