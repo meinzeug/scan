@@ -237,6 +237,7 @@ class ScanTUI(App):
         self._stage: str = "select"
         self._advanced: bool = False
         self._settings = self._load_settings()
+        self._last_saved: Optional[Path] = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -257,6 +258,10 @@ class ScanTUI(App):
                 yield Input(value="scan", id="prefix_input", placeholder="scan")
                 yield Label("Output directory", classes="field-label")
                 yield Input(value="./scans", id="output_dir_input", placeholder="./scans")
+                yield Label("Ready", classes="field-label")
+                yield Static("Place next page and press Space.", id="ready_label")
+                yield Label("Last saved", classes="field-label")
+                yield Static("-", id="last_saved")
                 yield Label("Next file", classes="field-label")
                 yield Static("-", id="next_file")
                 yield Label("Advanced options hidden (press A)", id="advanced_hint")
@@ -346,6 +351,9 @@ class ScanTUI(App):
         spinner = self.query_one("#spinner", LoadingIndicator)
         spinner.display = busy
 
+    def set_ready_message(self, message: str) -> None:
+        self.query_one("#ready_label", Static).update(message)
+
     def set_select_status(self, message: str) -> None:
         self.query_one("#select_status", Label).update(message)
 
@@ -363,6 +371,9 @@ class ScanTUI(App):
             self._set_advanced(self._advanced)
             self._update_scanner_detail(self.active_device())
             self._update_next_filename()
+            self.set_ready_message("Place next page and press Space.")
+            if self._last_saved:
+                self.query_one("#last_saved", Static).update(str(self._last_saved))
 
     def _set_advanced(self, enabled: bool) -> None:
         self._advanced = enabled
@@ -523,6 +534,9 @@ class ScanTUI(App):
 
         self.set_status("Scan complete", busy=False)
         self.log_message(f"[green]Saved:[/green] {filename}")
+        self._last_saved = filename
+        self.query_one("#last_saved", Static).update(str(filename))
+        self.set_ready_message("Ready for next page. Press Space.")
         self._save_settings()
         self._update_next_filename()
 
