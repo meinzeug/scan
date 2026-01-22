@@ -14,6 +14,7 @@ import site
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
+from time import monotonic
 
 TEXTUAL_REQUIREMENT = "textual>=0.52"
 CONFIG_PATH = Path.home() / ".config" / "scan_tui" / "config.json"
@@ -153,6 +154,15 @@ def next_index(prefix: str, output_dir: Path, ext: str) -> int:
     return max_idx + 1
 
 
+def format_bytes(num_bytes: int) -> str:
+    value = float(num_bytes)
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if value < 1024.0:
+            return f"{value:.1f} {unit}"
+        value /= 1024.0
+    return f"{value:.1f} PB"
+
+
 class ScanTUI(App):
     CSS = """
     Screen {
@@ -254,6 +264,7 @@ class ScanTUI(App):
         self._settings = self._load_settings()
         self._last_saved: Optional[Path] = None
         self._session_scans: int = 0
+        self._last_scan_seconds: Optional[float] = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -280,6 +291,8 @@ class ScanTUI(App):
                 yield Static("-", id="last_saved")
                 yield Label("Session scans", classes="field-label")
                 yield Static("0", id="session_count")
+                yield Label("Last scan", classes="field-label")
+                yield Static("-", id="last_scan_info")
                 yield Label("Next file", classes="field-label")
                 yield Static("-", id="next_file")
                 yield Label("Advanced options hidden (press A)", id="advanced_hint")
@@ -402,6 +415,8 @@ class ScanTUI(App):
             if self._last_saved:
                 self.query_one("#last_saved", Static).update(str(self._last_saved))
             self.query_one("#session_count", Static).update(str(self._session_scans))
+            if self._last_scan_seconds is not None:
+                self.query_one("#last_scan_info", Static).update(f"{self._last_scan_seconds:.2f}s")
             try:
                 self.query_one("#scan_button", Button).focus()
             except Exception:
@@ -549,6 +564,7 @@ class ScanTUI(App):
 
         self.set_status(f"Scanning {filename.name}…", busy=True)
         self.log_message(f"[cyan]Scanning[/cyan] {filename.name} on {short_device(device)}")
+        started = monotonic()
         try:
             result = await asyncio.to_thread(
                 subprocess.run,
@@ -569,14 +585,22 @@ class ScanTUI(App):
             return
 
         self.set_status("Scan complete", busy=False)
-        self.log_message(f"[green]Saved:[/green] {filename}")
+        duration = monotonic() - started
+        self._last_scan_seconds = duration
+        size_info = ""
+        try:
+            size_info = f" ({format_bytes(filename.stat().st_size)})"
+        except Exception:
+            size_info = ""
+        self.log_message(f"[green]Saved:[/green] {filename}{size_info} in {duration:.2f}s")
         try:
             sys.stdout.write("\a")
             sys.stdout.flush()
         except Exception:
             pass
         self._last_saved = filename
-        self.query_one("#last_saved", Static).update(str(filename))
+        self.query_one("#last_saved", Static).update(f"{filename}{size_info}")
+        self.query_one("#last_scan_info", Static).update(f"{duration:.2f}s{size_info}")
         self.set_ready_message("Ready for next page. Press Space.")
         self._session_scans += 1
         self.query_one("#session_count", Static).update(str(self._session_scans))
