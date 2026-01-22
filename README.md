@@ -11,8 +11,9 @@ TUI Scanning Tool for Ubuntu Linux (SANE `scanimage`).
 ## Requirements
 - Ubuntu Linux with SANE tools installed (`scanimage` command available)
 - Python 3.9+
+- `pip` available for auto-installing dependencies
 
-Install dependencies:
+Install dependencies manually (optional):
 
 ```bash
 python3 -m pip install -r requirements.txt
@@ -30,6 +31,8 @@ If the executable bit is missing:
 chmod +x scan_tui.py
 ./scan_tui.py
 ```
+
+Note: On first run, the script auto-installs `textual` via `pip` if it is missing.
 
 ## Tips
 - Use the **prefix** once, then press **Space** for each new page.

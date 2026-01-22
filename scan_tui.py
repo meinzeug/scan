@@ -7,13 +7,48 @@ import asyncio
 import re
 import shlex
 import subprocess
+import sys
+import importlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
+TEXTUAL_REQUIREMENT = "textual>=0.52"
+
+
+def _install_textual() -> None:
+    attempts = [
+        [sys.executable, "-m", "pip", "install", "--user", TEXTUAL_REQUIREMENT],
+        [sys.executable, "-m", "pip", "install", "--break-system-packages", TEXTUAL_REQUIREMENT],
+    ]
+    last_error = None
+    for cmd in attempts:
+        try:
+            print(f"[scan_tui] Installing dependency: {TEXTUAL_REQUIREMENT}")
+            subprocess.run(cmd, check=True)
+            return
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+    print(
+        "[scan_tui] Failed to install textual. "
+        "Install it via your package manager or pip.",
+        file=sys.stderr,
+    )
+    if last_error:
+        print(f"[scan_tui] Last error: {last_error}", file=sys.stderr)
+    sys.exit(1)
+
+
+try:
+    import textual  # noqa: F401
+except ModuleNotFoundError:
+    _install_textual()
+    importlib.invalidate_caches()
+    import textual  # noqa: F401
+
+from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual import events
 from textual.widgets import (
     Button,
     Footer,
