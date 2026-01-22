@@ -278,6 +278,7 @@ class ScanTUI(App):
         ("3", "preset_draft", "Preset Draft"),
         ("v", "open_last", "Open Last"),
         ("u", "toggle_auto_continue", "Auto Continue"),
+        ("e", "open_output_dir", "Open Output Dir"),
     ]
 
     def __init__(self) -> None:
@@ -370,7 +371,7 @@ class ScanTUI(App):
                 with Horizontal(id="status_bar"):
                     yield Label("Idle", id="status_label")
                     yield LoadingIndicator(id="spinner")
-                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  T date  1/2/3 presets  G gray  D dpi  O source  M format  V view  S scan  L log", id="hint_label")
+                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  T date  1/2/3 presets  G gray  D dpi  O source  M format  V view  E dir  S scan  L log", id="hint_label")
                 yield RichLog(id="log", highlight=True)
         yield Footer()
 
@@ -784,6 +785,21 @@ class ScanTUI(App):
             self.log_message("[red]xdg-open not found.[/red]")
         except Exception as exc:
             self.log_message(f"[red]Failed to open file:[/red] {exc}")
+
+    async def action_open_output_dir(self) -> None:
+        if self._stage != "scan":
+            return
+        output_dir = self._output_dir_path()
+        if not output_dir:
+            self.log_message("[yellow]Output directory not set.[/yellow]")
+            return
+        try:
+            await asyncio.to_thread(subprocess.run, ["xdg-open", str(output_dir)], check=False)
+            self.log_message(f"[green]Opened:[/green] {output_dir}")
+        except FileNotFoundError:
+            self.log_message("[red]xdg-open not found.[/red]")
+        except Exception as exc:
+            self.log_message(f"[red]Failed to open dir:[/red] {exc}")
 
     async def action_toggle_auto_continue(self) -> None:
         self._auto_continue_single = not self._auto_continue_single
