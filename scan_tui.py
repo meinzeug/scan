@@ -370,7 +370,7 @@ class ScanTUI(App):
                     yield Button("Scan (Space)", id="scan_button", variant="success")
                     yield Button("Advanced", id="advanced_button", variant="default")
                     yield Button("Back", id="back_button", variant="default")
-                    yield Button("Reset Count", id="reset_count", variant="default")
+                    yield Button("Reset Session", id="reset_count", variant="default")
                     yield Button("Clear Log", id="clear_log", variant="default")
                 with Horizontal(id="status_bar"):
                     yield Label("Idle", id="status_label")
@@ -404,6 +404,15 @@ class ScanTUI(App):
         self.query_one("#last_error", Static).update(message)
         if message and message != "-":
             self.log_message(f"[red]Last error:[/red] {message}")
+
+    def _update_session_stats(self) -> None:
+        self.query_one("#session_count", Static).update(str(self._session_scans))
+        self.query_one("#session_total", Static).update(format_bytes(self._session_bytes))
+        if self._session_scans:
+            avg = self._session_total_seconds / self._session_scans
+            self.query_one("#session_avg", Static).update(f"{avg:.2f}s")
+        else:
+            self.query_one("#session_avg", Static).update("-")
 
     def active_device(self) -> Optional[str]:
         select = self.query_one("#scanner_select", Select)
@@ -450,11 +459,7 @@ class ScanTUI(App):
             self.set_ready_message("Place next page and press Space.")
             if self._last_saved:
                 self.query_one("#last_saved", Static).update(str(self._last_saved))
-            self.query_one("#session_count", Static).update(str(self._session_scans))
-            self.query_one("#session_total", Static).update(format_bytes(self._session_bytes))
-            if self._session_scans:
-                avg = self._session_total_seconds / self._session_scans
-                self.query_one("#session_avg", Static).update(f"{avg:.2f}s")
+            self._update_session_stats()
             if self._last_scan_seconds is not None:
                 self.query_one("#last_scan_info", Static).update(f"{self._last_scan_seconds:.2f}s")
             if self._last_scan_time:
@@ -672,13 +677,10 @@ class ScanTUI(App):
         self.set_last_error("-")
         self.set_ready_message("Ready for next page. Press Space.")
         self._session_scans += 1
-        self.query_one("#session_count", Static).update(str(self._session_scans))
         if size_bytes is not None:
             self._session_bytes += size_bytes
-            self.query_one("#session_total", Static).update(format_bytes(self._session_bytes))
         self._session_total_seconds += duration
-        avg_time = self._session_total_seconds / self._session_scans
-        self.query_one("#session_avg", Static).update(f"{avg_time:.2f}s")
+        self._update_session_stats()
         self._append_history_entry(
             filename=filename,
             size_bytes=size_bytes,
@@ -702,7 +704,9 @@ class ScanTUI(App):
 
     async def action_reset_count(self) -> None:
         self._session_scans = 0
-        self.query_one("#session_count", Static).update("0")
+        self._session_bytes = 0
+        self._session_total_seconds = 0.0
+        self._update_session_stats()
 
     async def action_focus_prefix(self) -> None:
         if self._stage != "scan":
