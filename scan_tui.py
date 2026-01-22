@@ -296,6 +296,7 @@ class ScanTUI(App):
         self._session_total_seconds: float = 0.0
         self._auto_continue_single: bool = bool(self._settings.get("auto_continue_single", True))
         self._last_error: Optional[str] = None
+        self._last_scan_time: Optional[str] = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -331,6 +332,8 @@ class ScanTUI(App):
                 yield Static("-", id="session_avg")
                 yield Label("Last scan", classes="field-label")
                 yield Static("-", id="last_scan_info")
+                yield Label("Last scan time", classes="field-label")
+                yield Static("-", id="last_scan_time")
                 yield Label("Last error", classes="field-label")
                 yield Static("-", id="last_error")
                 yield Label("Next file", classes="field-label")
@@ -451,6 +454,8 @@ class ScanTUI(App):
                 self.query_one("#session_avg", Static).update(f"{avg:.2f}s")
             if self._last_scan_seconds is not None:
                 self.query_one("#last_scan_info", Static).update(f"{self._last_scan_seconds:.2f}s")
+            if self._last_scan_time:
+                self.query_one("#last_scan_time", Static).update(self._last_scan_time)
             if self._last_error:
                 self.query_one("#last_error", Static).update(self._last_error)
             try:
@@ -659,6 +664,9 @@ class ScanTUI(App):
         self._last_saved = filename
         self.query_one("#last_saved", Static).update(f"{filename}{size_info}")
         self.query_one("#last_scan_info", Static).update(f"{duration:.2f}s{size_info}")
+        self._last_scan_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.query_one("#last_scan_time", Static).update(self._last_scan_time)
+        self.set_last_error("-")
         self.set_ready_message("Ready for next page. Press Space.")
         self._session_scans += 1
         self.query_one("#session_count", Static).update(str(self._session_scans))
