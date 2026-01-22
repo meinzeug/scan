@@ -92,7 +92,7 @@ class ScannerInfo:
     raw: str
 
 
-SCAN_LINE_RE = re.compile(r"device\\s+[`'](.+?)[`']\\s+is\\s+(.+)")
+SCAN_LINE_RE = re.compile(r"device\\s+(.+?)\\s+is\\s+(.+)")
 
 
 def parse_scanimage_list(output: str) -> List[ScannerInfo]:
@@ -101,7 +101,10 @@ def parse_scanimage_list(output: str) -> List[ScannerInfo]:
         match = SCAN_LINE_RE.search(line)
         if not match:
             continue
-        device, name = match.group(1).strip(), match.group(2).strip()
+        device_raw, name = match.group(1).strip(), match.group(2).strip()
+        device = device_raw.strip("`'\"")
+        if not device:
+            continue
         scanners.append(ScannerInfo(device=device, name=name, raw=line.strip()))
     return scanners
 
@@ -316,7 +319,11 @@ class ScanTUI(App):
             if not select.value:
                 select.value = options_list[0][1]
         else:
-            select.value = None
+            try:
+                select.clear()
+            except AttributeError:
+                # Fallback for older Textual versions
+                select.value = options_list[0][1] if options_list else ""
 
     async def action_refresh_scanners(self) -> None:
         self.set_status("Refreshing scanners…", busy=True)
