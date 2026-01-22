@@ -290,7 +290,7 @@ class ScanTUI(App):
                     yield Label("Idle", id="status_label")
                     yield LoadingIndicator(id="spinner")
                     yield Label("↑/↓ focus  Enter activate  Space scan", id="hint_label")
-        yield RichLog(id="log", highlight=True)
+                yield RichLog(id="log", highlight=True, can_focus=True)
         yield Footer()
 
     async def on_mount(self) -> None:
@@ -321,10 +321,15 @@ class ScanTUI(App):
     def _set_stage(self, stage: str) -> None:
         self._stage = stage
         is_select = stage == "select"
-        self.query_one("#right", Vertical).display = not is_select
-        self.query_one("#log", RichLog).display = not is_select
-        self.query_one("#back_button", Button).display = not is_select
-        self.query_one("#continue_button", Button).display = is_select
+        right = self.query_one("#right", Vertical)
+        log = self.query_one("#log", RichLog)
+        back = self.query_one("#back_button", Button)
+        cont = self.query_one("#continue_button", Button)
+
+        right.styles.display = "none" if is_select else "block"
+        log.styles.display = "none" if is_select else "block"
+        back.styles.display = "none" if is_select else "block"
+        cont.styles.display = "block" if is_select else "none"
         if is_select:
             self.set_status("Select a scanner", busy=False)
 
@@ -508,6 +513,14 @@ class ScanTUI(App):
 
     async def on_key(self, event: events.Key) -> None:
         if event.key in {"up", "down", "left", "right"}:
+            focused = self.focused
+            if isinstance(focused, RichLog):
+                event.stop()
+                if event.key == "up":
+                    focused.scroll_up(1)
+                elif event.key == "down":
+                    focused.scroll_down(1)
+                return
             if self._focus_is_inputlike():
                 return
             event.stop()
@@ -516,6 +529,20 @@ class ScanTUI(App):
             else:
                 self.action_focus_next()
             return
+
+        if event.key in {"pageup", "pagedown", "home", "end"}:
+            focused = self.focused
+            if isinstance(focused, RichLog):
+                event.stop()
+                if event.key == "pageup":
+                    focused.scroll_page_up()
+                elif event.key == "pagedown":
+                    focused.scroll_page_down()
+                elif event.key == "home":
+                    focused.scroll_home()
+                else:
+                    focused.scroll_end()
+                return
 
         if event.key == "space":
             if self._focus_is_inputlike():
