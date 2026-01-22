@@ -183,12 +183,12 @@ class ScanTUI(App):
         border: round #2f343a;
     }
 
-    #actions {
+    #left_actions, #right_actions {
         height: auto;
         padding-top: 1;
     }
 
-    #actions Button {
+    #left_actions Button, #right_actions Button {
         width: 1fr;
         margin-right: 1;
     }
@@ -221,6 +221,7 @@ class ScanTUI(App):
         super().__init__()
         self._scanners: List[ScannerInfo] = []
         self._scan_lock = asyncio.Lock()
+        self._stage: str = "select"
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -231,9 +232,10 @@ class ScanTUI(App):
                 yield Select(options=[], id="scanner_select")
                 yield Label("Device details", classes="field-label")
                 yield Static("No scanner selected.", id="scanner_detail")
-                with Horizontal(id="actions"):
+                with Horizontal(id="left_actions"):
                     yield Button("Refresh", id="refresh", variant="primary")
-                    yield Button("Test Scan", id="test_scan", variant="default")
+                    yield Button("Continue", id="continue_button", variant="success")
+                    yield Button("Back", id="back_button", variant="default")
             with Vertical(id="right"):
                 yield Static("Scan Settings", classes="section-title")
                 yield Label("File name prefix", classes="field-label")
@@ -281,7 +283,7 @@ class ScanTUI(App):
                     id="extra_input",
                     placeholder="e.g. --brightness 10 --contrast 5",
                 )
-                with Horizontal(id="actions"):
+                with Horizontal(id="right_actions"):
                     yield Button("Scan (Space)", id="scan_button", variant="success")
                     yield Button("Clear Log", id="clear_log", variant="default")
                 with Horizontal(id="status_bar"):
@@ -293,6 +295,7 @@ class ScanTUI(App):
 
     async def on_mount(self) -> None:
         self.query_one("#spinner", LoadingIndicator).display = False
+        self._set_stage("select")
         await self.action_refresh_scanners()
 
     def log_message(self, message: str) -> None:
@@ -314,6 +317,16 @@ class ScanTUI(App):
         self.query_one("#status_label", Label).update(message)
         spinner = self.query_one("#spinner", LoadingIndicator)
         spinner.display = busy
+
+    def _set_stage(self, stage: str) -> None:
+        self._stage = stage
+        is_select = stage == "select"
+        self.query_one("#right", Vertical).display = not is_select
+        self.query_one("#log", RichLog).display = not is_select
+        self.query_one("#back_button", Button).display = not is_select
+        self.query_one("#continue_button", Button).display = is_select
+        if is_select:
+            self.set_status("Select a scanner", busy=False)
 
     def _set_select_options(self, options: Iterable[Tuple[str, str]]) -> None:
         select = self.query_one("#scanner_select", Select)
@@ -383,6 +396,8 @@ class ScanTUI(App):
         detail.update(f"{scanner.name}\n{scanner.device}")
 
     async def action_scan(self) -> None:
+        if self._stage != "scan":
+            return
         focused = self.focused
         if isinstance(focused, Input):
             return
@@ -466,8 +481,14 @@ class ScanTUI(App):
             await self.action_scan()
         elif event.button.id == "clear_log":
             await self.action_clear_log()
-        elif event.button.id == "test_scan":
-            await self.action_scan()
+        elif event.button.id == "continue_button":
+            device = self.active_device()
+            if not device:
+                self.log_message("[red]Select a scanner first.[/red]")
+                return
+            self._set_stage("scan")
+        elif event.button.id == "back_button":
+            self._set_stage("select")
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "scanner_select":
