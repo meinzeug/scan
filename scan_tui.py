@@ -279,6 +279,7 @@ class ScanTUI(App):
         ("v", "open_last", "Open Last"),
         ("u", "toggle_auto_continue", "Auto Continue"),
         ("e", "open_output_dir", "Open Output Dir"),
+        ("x", "clear_last_error", "Clear Error"),
     ]
 
     def __init__(self) -> None:
@@ -374,7 +375,7 @@ class ScanTUI(App):
                 with Horizontal(id="status_bar"):
                     yield Label("Idle", id="status_label")
                     yield LoadingIndicator(id="spinner")
-                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  T date  1/2/3 presets  G gray  D dpi  O source  M format  V view  E dir  S scan  L log", id="hint_label")
+                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  T date  1/2/3 presets  G gray  D dpi  O source  M format  V view  E dir  X clear err  S scan  L log", id="hint_label")
                 yield RichLog(id="log", highlight=True)
         yield Footer()
 
@@ -401,6 +402,8 @@ class ScanTUI(App):
     def set_last_error(self, message: str) -> None:
         self._last_error = message
         self.query_one("#last_error", Static).update(message)
+        if message and message != "-":
+            self.log_message(f"[red]Last error:[/red] {message}")
 
     def active_device(self) -> Optional[str]:
         select = self.query_one("#scanner_select", Select)
@@ -815,6 +818,9 @@ class ScanTUI(App):
         self.set_select_status("Select a scanner to continue.")
         state = "On" if self._auto_continue_single else "Off"
         self.log_message(f"[blue]Auto-continue:[/blue] {state}")
+
+    async def action_clear_last_error(self) -> None:
+        self.set_last_error("-")
 
     def _apply_preset(self, label: str, resolution: int, mode: str, fmt: str) -> None:
         if self._focus_is_inputlike():
