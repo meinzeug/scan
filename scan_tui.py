@@ -290,11 +290,16 @@ class ScanTUI(App):
                     yield Label("Idle", id="status_label")
                     yield LoadingIndicator(id="spinner")
                     yield Label("↑/↓ focus  Enter activate  Space scan", id="hint_label")
-                yield RichLog(id="log", highlight=True, can_focus=True)
+        yield RichLog(id="log", highlight=True)
         yield Footer()
 
     async def on_mount(self) -> None:
         self.query_one("#spinner", LoadingIndicator).display = False
+        log = self.query_one("#log", RichLog)
+        try:
+            log.can_focus = True
+        except Exception:
+            pass
         self._set_stage("select")
         await self.action_refresh_scanners()
 
