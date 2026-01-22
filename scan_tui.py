@@ -294,6 +294,7 @@ class ScanTUI(App):
         self._session_bytes: int = 0
         self._session_total_seconds: float = 0.0
         self._auto_continue_single: bool = bool(self._settings.get("auto_continue_single", True))
+        self._last_error: Optional[str] = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -329,6 +330,8 @@ class ScanTUI(App):
                 yield Static("-", id="session_avg")
                 yield Label("Last scan", classes="field-label")
                 yield Static("-", id="last_scan_info")
+                yield Label("Last error", classes="field-label")
+                yield Static("-", id="last_error")
                 yield Label("Next file", classes="field-label")
                 yield Static("-", id="next_file")
                 yield Label("Advanced options hidden (press A)", id="advanced_hint")
@@ -391,6 +394,10 @@ class ScanTUI(App):
         except Exception:
             pass
 
+    def set_last_error(self, message: str) -> None:
+        self._last_error = message
+        self.query_one("#last_error", Static).update(message)
+
     def active_device(self) -> Optional[str]:
         select = self.query_one("#scanner_select", Select)
         value = select.value
@@ -443,6 +450,8 @@ class ScanTUI(App):
                 self.query_one("#session_avg", Static).update(f"{avg:.2f}s")
             if self._last_scan_seconds is not None:
                 self.query_one("#last_scan_info", Static).update(f"{self._last_scan_seconds:.2f}s")
+            if self._last_error:
+                self.query_one("#last_error", Static).update(self._last_error)
             try:
                 self.query_one("#scan_button", Button).focus()
             except Exception:
@@ -563,6 +572,7 @@ class ScanTUI(App):
         device = self.active_device()
         if not device:
             self.log_message("[red]Select a scanner first.[/red]")
+            self.set_last_error("No scanner selected")
             return False
 
         prefix_input = self.query_one("#prefix_input", Input)
@@ -572,10 +582,12 @@ class ScanTUI(App):
             self.log_message("[yellow]Prefix sanitized.[/yellow]")
         if not prefix:
             self.log_message("[red]Prefix cannot be empty.[/red]")
+            self.set_last_error("Prefix empty")
             return False
 
         output_dir = self._ensure_output_dir()
         if output_dir is None:
+            self.set_last_error("Output directory error")
             return False
 
         fmt = (self.query_one("#format_select", Select).value or "png").lower()
@@ -600,6 +612,7 @@ class ScanTUI(App):
                 cmd += shlex.split(extra)
             except ValueError as exc:
                 self.log_message(f"[red]Extra options parse error:[/red] {exc}")
+                self.set_last_error("Extra options parse error")
                 return False
 
         self.set_status(f"Scanning {filename.name}…", busy=True)
@@ -616,12 +629,14 @@ class ScanTUI(App):
         except subprocess.TimeoutExpired:
             self.set_status("Scan timed out", busy=False)
             self.log_message("[red]Scan timed out.[/red]")
+            self.set_last_error("Scan timed out")
             return False
 
         if result.returncode != 0:
             self.set_status("Scan failed", busy=False)
             error = result.stderr.strip() or result.stdout.strip() or "Unknown error"
             self.log_message(f"[red]scanimage failed:[/red] {error}")
+            self.set_last_error("Scan failed")
             return False
 
         self.set_status("Scan complete", busy=False)
