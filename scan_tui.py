@@ -291,7 +291,7 @@ class ScanTUI(App):
         self.query_one("#spinner", LoadingIndicator).display = False
         await self.action_refresh_scanners()
 
-    def log(self, message: str) -> None:
+    def log_message(self, message: str) -> None:
         log = self.query_one("#log", RichLog)
         log.write(message)
 
@@ -319,7 +319,7 @@ class ScanTUI(App):
 
     async def action_refresh_scanners(self) -> None:
         self.set_status("Refreshing scanners…", busy=True)
-        self.log("[bold]Scanning for devices…[/bold]")
+        self.log_message("[bold]Scanning for devices…[/bold]")
         try:
             result = await asyncio.to_thread(
                 subprocess.run,
@@ -330,16 +330,16 @@ class ScanTUI(App):
             )
         except FileNotFoundError:
             self.set_status("scanimage not found", busy=False)
-            self.log("[red]Error:[/red] scanimage not found. Install SANE tools.")
+            self.log_message("[red]Error:[/red] scanimage not found. Install SANE tools.")
             return
         except subprocess.TimeoutExpired:
             self.set_status("Scan timed out", busy=False)
-            self.log("[red]Error:[/red] scanimage -L timed out.")
+            self.log_message("[red]Error:[/red] scanimage -L timed out.")
             return
 
         if result.returncode != 0:
             self.set_status("Scan failed", busy=False)
-            self.log(f"[red]scanimage error:[/red] {result.stderr.strip() or result.stdout.strip()}")
+            self.log_message(f"[red]scanimage error:[/red] {result.stderr.strip() or result.stdout.strip()}")
             return
 
         scanners = parse_scanimage_list(result.stdout)
@@ -348,7 +348,7 @@ class ScanTUI(App):
             self._set_select_options([])
             self.query_one("#scanner_detail", Static).update("No scanners found.")
             self.set_status("No scanners found", busy=False)
-            self.log("[yellow]No scanners detected.[/yellow]")
+            self.log_message("[yellow]No scanners detected.[/yellow]")
             return
 
         options = [(f"{s.name} [{short_device(s.device)}]", s.device) for s in scanners]
@@ -372,7 +372,7 @@ class ScanTUI(App):
         if isinstance(focused, Input):
             return
         if self._scan_lock.locked():
-            self.log("[yellow]Scan already in progress.[/yellow]")
+            self.log_message("[yellow]Scan already in progress.[/yellow]")
             return
         async with self._scan_lock:
             await self._run_scan()
@@ -380,12 +380,12 @@ class ScanTUI(App):
     async def _run_scan(self) -> None:
         device = self.active_device()
         if not device:
-            self.log("[red]Select a scanner first.[/red]")
+            self.log_message("[red]Select a scanner first.[/red]")
             return
 
         prefix = self.query_one("#prefix_input", Input).value.strip()
         if not prefix:
-            self.log("[red]Prefix cannot be empty.[/red]")
+            self.log_message("[red]Prefix cannot be empty.[/red]")
             return
 
         output_dir_input = self.query_one("#output_dir_input", Input).value.strip()
@@ -413,11 +413,11 @@ class ScanTUI(App):
             try:
                 cmd += shlex.split(extra)
             except ValueError as exc:
-                self.log(f"[red]Extra options parse error:[/red] {exc}")
+                self.log_message(f"[red]Extra options parse error:[/red] {exc}")
                 return
 
         self.set_status(f"Scanning {filename.name}…", busy=True)
-        self.log(f"[cyan]Scanning[/cyan] {filename.name} on {short_device(device)}")
+        self.log_message(f"[cyan]Scanning[/cyan] {filename.name} on {short_device(device)}")
         try:
             result = await asyncio.to_thread(
                 subprocess.run,
@@ -428,21 +428,21 @@ class ScanTUI(App):
             )
         except subprocess.TimeoutExpired:
             self.set_status("Scan timed out", busy=False)
-            self.log("[red]Scan timed out.[/red]")
+            self.log_message("[red]Scan timed out.[/red]")
             return
 
         if result.returncode != 0:
             self.set_status("Scan failed", busy=False)
             error = result.stderr.strip() or result.stdout.strip() or "Unknown error"
-            self.log(f"[red]scanimage failed:[/red] {error}")
+            self.log_message(f"[red]scanimage failed:[/red] {error}")
             return
 
         self.set_status("Scan complete", busy=False)
-        self.log(f"[green]Saved:[/green] {filename}")
+        self.log_message(f"[green]Saved:[/green] {filename}")
 
     async def action_clear_log(self) -> None:
         self.query_one("#log", RichLog).clear()
-        self.log("Log cleared.")
+        self.log_message("Log cleared.")
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "refresh":
