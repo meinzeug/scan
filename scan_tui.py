@@ -13,6 +13,7 @@ import subprocess
 import sys
 import site
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 from time import monotonic
@@ -255,6 +256,7 @@ class ScanTUI(App):
         ("s", "focus_scan", "Focus Scan"),
         ("l", "focus_log", "Focus Log"),
         ("f5", "refresh_scanners", "Refresh"),
+        ("t", "set_date_prefix", "Date Prefix"),
     ]
 
     def __init__(self) -> None:
@@ -352,7 +354,7 @@ class ScanTUI(App):
                 with Horizontal(id="status_bar"):
                     yield Label("Idle", id="status_label")
                     yield LoadingIndicator(id="spinner")
-                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  S scan  L log", id="hint_label")
+                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  T date  S scan  L log", id="hint_label")
                 yield RichLog(id="log", highlight=True)
         yield Footer()
 
@@ -656,6 +658,14 @@ class ScanTUI(App):
             return
         self.query_one("#log", RichLog).focus()
 
+    async def action_set_date_prefix(self) -> None:
+        if self._stage != "scan":
+            return
+        prefix = datetime.now().strftime("%Y%m%d")
+        self.query_one("#prefix_input", Input).value = prefix
+        self._update_next_filename()
+        self._save_settings()
+
     def _load_settings(self) -> dict:
         try:
             with CONFIG_PATH.open("r", encoding="utf-8") as handle:
@@ -696,12 +706,17 @@ class ScanTUI(App):
         self._advanced = bool(settings.get("advanced", False))
         self._update_free_space()
 
-    def _ensure_output_dir(self) -> Optional[Path]:
+    def _output_dir_path(self) -> Optional[Path]:
         output_dir_input = self.query_one("#output_dir_input", Input).value.strip()
         if not output_dir_input:
+            return None
+        return Path(output_dir_input).expanduser()
+
+    def _ensure_output_dir(self) -> Optional[Path]:
+        output_dir = self._output_dir_path()
+        if output_dir is None:
             self.log_message("[red]Output directory cannot be empty.[/red]")
             return None
-        output_dir = Path(output_dir_input).expanduser()
         try:
             output_dir.mkdir(parents=True, exist_ok=True)
         except Exception as exc:
@@ -713,12 +728,15 @@ class ScanTUI(App):
     def _update_free_space(self, output_dir: Optional[Path] = None) -> None:
         try:
             if output_dir is None:
-                output_dir_input = self.query_one("#output_dir_input", Input).value.strip()
-                if not output_dir_input:
-                    self.query_one("#free_space", Static).update("-")
-                    return
-                output_dir = Path(output_dir_input).expanduser()
-            usage = shutil.disk_usage(str(output_dir))
+                output_dir = self._output_dir_path()
+            if output_dir is None:
+                self.query_one("#free_space", Static).update("-")
+                return
+            probe = output_dir if output_dir.exists() else output_dir.parent
+            if not probe.exists():
+                self.query_one("#free_space", Static).update("-")
+                return
+            usage = shutil.disk_usage(str(probe))
             self.query_one("#free_space", Static).update(format_bytes(usage.free))
         except Exception:
             self.query_one("#free_space", Static).update("-")
@@ -729,10 +747,7 @@ class ScanTUI(App):
         if not prefix:
             self.query_one("#next_file", Static).update("-")
             return
-        output_dir = self._ensure_output_dir()
-        if output_dir is None:
-            self.query_one("#next_file", Static).update("-")
-            return
+        output_dir = self._output_dir_path() or Path("./scans")
         fmt = (self.query_one("#format_select", Select).value or "png").lower()
         ext = "jpg" if fmt == "jpeg" else fmt
         index = next_index(prefix, output_dir, ext)
@@ -773,6 +788,7 @@ class ScanTUI(App):
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id in {"prefix_input", "output_dir_input"}:
             self._update_next_filename()
+            self._update_free_space()
         if event.input.id in {
             "prefix_input",
             "output_dir_input",
