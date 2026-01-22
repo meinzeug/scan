@@ -193,6 +193,15 @@ class ScanTUI(App):
         margin-right: 1;
     }
 
+    #advanced_panel {
+        margin-top: 1;
+    }
+
+    #advanced_hint {
+        color: #9aa2ad;
+        padding-top: 1;
+    }
+
     #log {
         border: round #2f343a;
         height: 12;
@@ -216,6 +225,7 @@ class ScanTUI(App):
         ("r", "refresh_scanners", "Refresh Scanners"),
         ("c", "clear_log", "Clear Log"),
         ("b", "back", "Back"),
+        ("a", "toggle_advanced", "Toggle Advanced"),
     ]
 
     def __init__(self) -> None:
@@ -223,6 +233,7 @@ class ScanTUI(App):
         self._scanners: List[ScannerInfo] = []
         self._scan_lock = asyncio.Lock()
         self._stage: str = "select"
+        self._advanced: bool = False
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -243,49 +254,52 @@ class ScanTUI(App):
                 yield Input(value="scan", id="prefix_input", placeholder="scan")
                 yield Label("Output directory", classes="field-label")
                 yield Input(value="./scans", id="output_dir_input", placeholder="./scans")
-                yield Label("Format", classes="field-label")
-                yield Select(
-                    options=[
-                        ("PNG", "png"),
-                        ("JPEG", "jpeg"),
-                        ("TIFF", "tiff"),
-                        ("PDF", "pdf"),
-                        ("PNM", "pnm"),
-                    ],
-                    id="format_select",
-                    value="png",
-                )
-                yield Label("Resolution (DPI)", classes="field-label")
-                yield Input(value="300", id="resolution_input", placeholder="300")
-                yield Label("Mode", classes="field-label")
-                yield Select(
-                    options=[
-                        ("Default", ""),
-                        ("Color", "Color"),
-                        ("Gray", "Gray"),
-                        ("Lineart", "Lineart"),
-                    ],
-                    id="mode_select",
-                    value="Color",
-                )
-                yield Label("Source", classes="field-label")
-                yield Select(
-                    options=[
-                        ("Default", ""),
-                        ("Flatbed", "Flatbed"),
-                        ("ADF", "ADF"),
-                        ("ADF Duplex", "ADF Duplex"),
-                    ],
-                    id="source_select",
-                    value="Flatbed",
-                )
-                yield Label("Extra scanimage options", classes="field-label")
-                yield Input(
-                    id="extra_input",
-                    placeholder="e.g. --brightness 10 --contrast 5",
-                )
+                yield Label("Advanced options hidden (press A)", id="advanced_hint")
+                with Vertical(id="advanced_panel"):
+                    yield Label("Format", classes="field-label")
+                    yield Select(
+                        options=[
+                            ("PNG", "png"),
+                            ("JPEG", "jpeg"),
+                            ("TIFF", "tiff"),
+                            ("PDF", "pdf"),
+                            ("PNM", "pnm"),
+                        ],
+                        id="format_select",
+                        value="png",
+                    )
+                    yield Label("Resolution (DPI)", classes="field-label")
+                    yield Input(value="300", id="resolution_input", placeholder="300")
+                    yield Label("Mode", classes="field-label")
+                    yield Select(
+                        options=[
+                            ("Default", ""),
+                            ("Color", "Color"),
+                            ("Gray", "Gray"),
+                            ("Lineart", "Lineart"),
+                        ],
+                        id="mode_select",
+                        value="Color",
+                    )
+                    yield Label("Source", classes="field-label")
+                    yield Select(
+                        options=[
+                            ("Default", ""),
+                            ("Flatbed", "Flatbed"),
+                            ("ADF", "ADF"),
+                            ("ADF Duplex", "ADF Duplex"),
+                        ],
+                        id="source_select",
+                        value="Flatbed",
+                    )
+                    yield Label("Extra scanimage options", classes="field-label")
+                    yield Input(
+                        id="extra_input",
+                        placeholder="e.g. --brightness 10 --contrast 5",
+                    )
                 with Horizontal(id="scan_actions"):
                     yield Button("Scan (Space)", id="scan_button", variant="success")
+                    yield Button("Advanced", id="advanced_button", variant="default")
                     yield Button("Back", id="back_button", variant="default")
                     yield Button("Clear Log", id="clear_log", variant="default")
                 with Horizontal(id="status_bar"):
@@ -302,6 +316,7 @@ class ScanTUI(App):
             log.can_focus = True
         except Exception:
             pass
+        self._set_advanced(False)
         self._set_stage("select")
         await self.action_refresh_scanners()
 
@@ -338,6 +353,17 @@ class ScanTUI(App):
         if is_select:
             self.set_status("Select a scanner", busy=False)
             self.set_select_status("Select a scanner to continue.")
+        else:
+            self._set_advanced(self._advanced)
+
+    def _set_advanced(self, enabled: bool) -> None:
+        self._advanced = enabled
+        panel = self.query_one("#advanced_panel", Vertical)
+        hint = self.query_one("#advanced_hint", Label)
+        button = self.query_one("#advanced_button", Button)
+        panel.styles.display = "block" if enabled else "none"
+        hint.styles.display = "none" if enabled else "block"
+        button.label = "Simple" if enabled else "Advanced"
 
     def _set_select_options(self, options: Iterable[Tuple[str, str]]) -> None:
         select = self.query_one("#scanner_select", Select)
@@ -494,6 +520,11 @@ class ScanTUI(App):
     async def action_back(self) -> None:
         self._set_stage("select")
 
+    async def action_toggle_advanced(self) -> None:
+        if self._stage != "scan":
+            return
+        self._set_advanced(not self._advanced)
+
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "refresh":
             await self.action_refresh_scanners()
@@ -510,6 +541,8 @@ class ScanTUI(App):
             self._set_stage("scan")
         elif event.button.id == "back_button":
             self._set_stage("select")
+        elif event.button.id == "advanced_button":
+            await self.action_toggle_advanced()
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "scanner_select":
