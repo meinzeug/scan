@@ -238,6 +238,7 @@ class ScanTUI(App):
         self._advanced: bool = False
         self._settings = self._load_settings()
         self._last_saved: Optional[Path] = None
+        self._session_scans: int = 0
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -262,6 +263,8 @@ class ScanTUI(App):
                 yield Static("Place next page and press Space.", id="ready_label")
                 yield Label("Last saved", classes="field-label")
                 yield Static("-", id="last_saved")
+                yield Label("Session scans", classes="field-label")
+                yield Static("0", id="session_count")
                 yield Label("Next file", classes="field-label")
                 yield Static("-", id="next_file")
                 yield Label("Advanced options hidden (press A)", id="advanced_hint")
@@ -311,6 +314,7 @@ class ScanTUI(App):
                     yield Button("Scan (Space)", id="scan_button", variant="success")
                     yield Button("Advanced", id="advanced_button", variant="default")
                     yield Button("Back", id="back_button", variant="default")
+                    yield Button("Reset Count", id="reset_count", variant="default")
                     yield Button("Clear Log", id="clear_log", variant="default")
                 with Horizontal(id="status_bar"):
                     yield Label("Idle", id="status_label")
@@ -374,6 +378,7 @@ class ScanTUI(App):
             self.set_ready_message("Place next page and press Space.")
             if self._last_saved:
                 self.query_one("#last_saved", Static).update(str(self._last_saved))
+            self.query_one("#session_count", Static).update(str(self._session_scans))
 
     def _set_advanced(self, enabled: bool) -> None:
         self._advanced = enabled
@@ -537,6 +542,8 @@ class ScanTUI(App):
         self._last_saved = filename
         self.query_one("#last_saved", Static).update(str(filename))
         self.set_ready_message("Ready for next page. Press Space.")
+        self._session_scans += 1
+        self.query_one("#session_count", Static).update(str(self._session_scans))
         self._save_settings()
         self._update_next_filename()
 
@@ -551,6 +558,10 @@ class ScanTUI(App):
         if self._stage != "scan":
             return
         self._set_advanced(not self._advanced)
+
+    async def action_reset_count(self) -> None:
+        self._session_scans = 0
+        self.query_one("#session_count", Static).update("0")
 
     def _load_settings(self) -> dict:
         try:
@@ -620,6 +631,8 @@ class ScanTUI(App):
             self._set_stage("select")
         elif event.button.id == "advanced_button":
             await self.action_toggle_advanced()
+        elif event.button.id == "reset_count":
+            await self.action_reset_count()
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "scanner_select":
