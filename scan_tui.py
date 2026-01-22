@@ -20,6 +20,7 @@ from time import monotonic
 
 TEXTUAL_REQUIREMENT = "textual>=0.52"
 CONFIG_PATH = Path.home() / ".config" / "scan_tui" / "config.json"
+RESOLUTION_PRESETS = [150, 300, 600]
 
 
 def _install_textual() -> None:
@@ -257,6 +258,8 @@ class ScanTUI(App):
         ("l", "focus_log", "Focus Log"),
         ("f5", "refresh_scanners", "Refresh"),
         ("t", "set_date_prefix", "Date Prefix"),
+        ("g", "toggle_gray", "Toggle Gray"),
+        ("d", "cycle_resolution", "Cycle DPI"),
     ]
 
     def __init__(self) -> None:
@@ -354,7 +357,7 @@ class ScanTUI(App):
                 with Horizontal(id="status_bar"):
                     yield Label("Idle", id="status_label")
                     yield LoadingIndicator(id="spinner")
-                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  T date  S scan  L log", id="hint_label")
+                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  T date  G gray  D dpi  S scan  L log", id="hint_label")
                 yield RichLog(id="log", highlight=True)
         yield Footer()
 
@@ -665,6 +668,30 @@ class ScanTUI(App):
         self.query_one("#prefix_input", Input).value = prefix
         self._update_next_filename()
         self._save_settings()
+
+    async def action_toggle_gray(self) -> None:
+        if self._stage != "scan":
+            return
+        mode_select = self.query_one("#mode_select", Select)
+        current = (mode_select.value or "").lower()
+        new_mode = "Gray" if current != "gray" else "Color"
+        mode_select.value = new_mode
+        self._save_settings()
+        self.log_message(f"[blue]Mode:[/blue] {new_mode}")
+
+    async def action_cycle_resolution(self) -> None:
+        if self._stage != "scan":
+            return
+        input_widget = self.query_one("#resolution_input", Input)
+        current = safe_int(input_widget.value.strip(), RESOLUTION_PRESETS[0])
+        if current in RESOLUTION_PRESETS:
+            idx = RESOLUTION_PRESETS.index(current)
+            new_value = RESOLUTION_PRESETS[(idx + 1) % len(RESOLUTION_PRESETS)]
+        else:
+            new_value = RESOLUTION_PRESETS[0]
+        input_widget.value = str(new_value)
+        self._save_settings()
+        self.log_message(f"[blue]Resolution:[/blue] {new_value} DPI")
 
     def _load_settings(self) -> dict:
         try:
