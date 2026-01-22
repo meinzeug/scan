@@ -253,6 +253,7 @@ class ScanTUI(App):
         ("p", "focus_prefix", "Focus Prefix"),
         ("s", "focus_scan", "Focus Scan"),
         ("l", "focus_log", "Focus Log"),
+        ("f5", "refresh_scanners", "Refresh"),
     ]
 
     def __init__(self) -> None:
@@ -359,8 +360,8 @@ class ScanTUI(App):
             log.can_focus = True
         except Exception:
             pass
-        self._set_advanced(False)
         self._apply_scan_settings()
+        self._set_advanced(self._advanced)
         self._set_stage("select")
         await self.action_refresh_scanners()
 
@@ -671,6 +672,7 @@ class ScanTUI(App):
             "source": self.query_one("#source_select", Select).value or "",
             "extra": self.query_one("#extra_input", Input).value.strip(),
             "last_device": self.active_device(),
+            "advanced": self._advanced,
         }
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -688,6 +690,7 @@ class ScanTUI(App):
         self.query_one("#mode_select", Select).value = settings.get("mode", "Color")
         self.query_one("#source_select", Select).value = settings.get("source", "Flatbed")
         self.query_one("#extra_input", Input).value = settings.get("extra", "")
+        self._advanced = bool(settings.get("advanced", False))
 
     def _ensure_output_dir(self) -> Optional[Path]:
         output_dir_input = self.query_one("#output_dir_input", Input).value.strip()
