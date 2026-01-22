@@ -287,6 +287,7 @@ class ScanTUI(App):
                 with Horizontal(id="status_bar"):
                     yield Label("Idle", id="status_label")
                     yield LoadingIndicator(id="spinner")
+                    yield Label("↑/↓ focus  Enter activate  Space scan", id="hint_label")
         yield RichLog(id="log", highlight=True)
         yield Footer()
 
@@ -472,10 +473,31 @@ class ScanTUI(App):
         if event.select.id == "scanner_select":
             self._update_scanner_detail(event.value)
 
+    def _focus_is_inputlike(self) -> bool:
+        focused = self.focused
+        if focused is None:
+            return False
+        if isinstance(focused, Input):
+            return True
+        if isinstance(focused, Select):
+            return True
+        if focused.__class__.__name__ == "SelectOverlay":
+            return True
+        return False
+
     async def on_key(self, event: events.Key) -> None:
+        if event.key in {"up", "down", "left", "right"}:
+            if self._focus_is_inputlike():
+                return
+            event.stop()
+            if event.key in {"up", "left"}:
+                self.action_focus_previous()
+            else:
+                self.action_focus_next()
+            return
+
         if event.key == "space":
-            focused = self.focused
-            if isinstance(focused, Input):
+            if self._focus_is_inputlike():
                 return
             event.stop()
             await self.action_scan()
