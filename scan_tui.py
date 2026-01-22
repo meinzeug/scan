@@ -99,6 +99,7 @@ SCAN_LINE_RE = re.compile(r"device\s+(.+?)\s+is\s+(.+)")
 
 def parse_scanimage_list(output: str) -> List[ScannerInfo]:
     scanners: List[ScannerInfo] = []
+    seen = set()
     for line in output.splitlines():
         match = SCAN_LINE_RE.search(line)
         if not match:
@@ -107,6 +108,9 @@ def parse_scanimage_list(output: str) -> List[ScannerInfo]:
         device = device_raw.strip("`'\"")
         if not device:
             continue
+        if device in seen:
+            continue
+        seen.add(device)
         scanners.append(ScannerInfo(device=device, name=name, raw=line.strip()))
     return scanners
 
@@ -236,6 +240,9 @@ class ScanTUI(App):
         ("c", "clear_log", "Clear Log"),
         ("b", "back", "Back"),
         ("a", "toggle_advanced", "Toggle Advanced"),
+        ("p", "focus_prefix", "Focus Prefix"),
+        ("s", "focus_scan", "Focus Scan"),
+        ("l", "focus_log", "Focus Log"),
     ]
 
     def __init__(self) -> None:
@@ -327,7 +334,7 @@ class ScanTUI(App):
                 with Horizontal(id="status_bar"):
                     yield Label("Idle", id="status_label")
                     yield LoadingIndicator(id="spinner")
-                    yield Label("↑/↓ focus  Enter activate  Space scan", id="hint_label")
+                    yield Label("↑/↓ focus  Enter/Space scan  P prefix  S scan  L log", id="hint_label")
                 yield RichLog(id="log", highlight=True)
         yield Footer()
 
@@ -346,6 +353,10 @@ class ScanTUI(App):
     def log_message(self, message: str) -> None:
         log = self.query_one("#log", RichLog)
         log.write(message)
+        try:
+            log.scroll_end(animate=False)
+        except Exception:
+            pass
 
     def active_device(self) -> Optional[str]:
         select = self.query_one("#scanner_select", Select)
@@ -379,6 +390,10 @@ class ScanTUI(App):
         if is_select:
             self.set_status("Select a scanner", busy=False)
             self.set_select_status("Select a scanner to continue.")
+            try:
+                self.query_one("#scanner_select", Select).focus()
+            except Exception:
+                pass
         else:
             self._set_advanced(self._advanced)
             self._update_scanner_detail(self.active_device())
@@ -387,6 +402,10 @@ class ScanTUI(App):
             if self._last_saved:
                 self.query_one("#last_saved", Static).update(str(self._last_saved))
             self.query_one("#session_count", Static).update(str(self._session_scans))
+            try:
+                self.query_one("#scan_button", Button).focus()
+            except Exception:
+                pass
 
     def _set_advanced(self, enabled: bool) -> None:
         self._advanced = enabled
@@ -579,6 +598,21 @@ class ScanTUI(App):
     async def action_reset_count(self) -> None:
         self._session_scans = 0
         self.query_one("#session_count", Static).update("0")
+
+    async def action_focus_prefix(self) -> None:
+        if self._stage != "scan":
+            return
+        self.query_one("#prefix_input", Input).focus()
+
+    async def action_focus_scan(self) -> None:
+        if self._stage != "scan":
+            return
+        self.query_one("#scan_button", Button).focus()
+
+    async def action_focus_log(self) -> None:
+        if self._stage != "scan":
+            return
+        self.query_one("#log", RichLog).focus()
 
     def _load_settings(self) -> dict:
         try:
