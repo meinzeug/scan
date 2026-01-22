@@ -20,6 +20,7 @@ from time import monotonic
 
 TEXTUAL_REQUIREMENT = "textual>=0.52"
 CONFIG_PATH = Path.home() / ".config" / "scan_tui" / "config.json"
+HISTORY_PATH = Path.home() / ".config" / "scan_tui" / "history.jsonl"
 RESOLUTION_PRESETS = [150, 300, 600]
 FORMAT_OPTIONS = ["png", "jpeg", "tiff", "pdf", "pnm"]
 MODE_OPTIONS = ["", "Color", "Gray", "Lineart"]
@@ -167,6 +168,13 @@ def format_bytes(num_bytes: int) -> str:
             return f"{value:.1f} {unit}"
         value /= 1024.0
     return f"{value:.1f} PB"
+
+
+def append_history(path: Path, record: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        json.dump(record, handle, ensure_ascii=False)
+        handle.write("\n")
 
 
 class ScanTUI(App):
@@ -615,6 +623,11 @@ class ScanTUI(App):
         self.set_ready_message("Ready for next page. Press Space.")
         self._session_scans += 1
         self.query_one("#session_count", Static).update(str(self._session_scans))
+        self._append_history_entry(
+            filename=filename,
+            size_bytes=filename.stat().st_size if filename.exists() else None,
+            duration=duration,
+        )
         self._save_settings()
         self._update_next_filename()
         return True
@@ -713,6 +726,23 @@ class ScanTUI(App):
         self._update_next_filename()
         self._save_settings()
         self.log_message(f"[blue]Format:[/blue] {new_value.upper()}")
+
+    def _append_history_entry(self, filename: Path, size_bytes: Optional[int], duration: float) -> None:
+        try:
+            record = {
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "file": str(filename),
+                "size_bytes": size_bytes,
+                "duration_seconds": round(duration, 3),
+                "device": self.active_device(),
+                "format": self.query_one("#format_select", Select).value or "png",
+                "resolution": self.query_one("#resolution_input", Input).value.strip(),
+                "mode": self.query_one("#mode_select", Select).value or "",
+                "source": self.query_one("#source_select", Select).value or "",
+            }
+            append_history(HISTORY_PATH, record)
+        except Exception:
+            return
 
     def _load_settings(self) -> dict:
         try:
