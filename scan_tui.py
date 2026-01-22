@@ -151,17 +151,17 @@ class ScanTUI(App):
         padding: 1 2;
     }
 
-    #left, #right {
+    #select_panel, #scan_panel {
         width: 1fr;
         min-width: 40;
     }
 
-    #left {
+    #select_panel {
         border: round #3b3f46;
         padding: 1 2;
     }
 
-    #right {
+    #scan_panel {
         border: round #3b3f46;
         padding: 1 2;
     }
@@ -183,12 +183,12 @@ class ScanTUI(App):
         border: round #2f343a;
     }
 
-    #left_actions, #right_actions {
+    #select_actions, #scan_actions {
         height: auto;
         padding-top: 1;
     }
 
-    #left_actions Button, #right_actions Button {
+    #select_actions Button, #scan_actions Button {
         width: 1fr;
         margin-right: 1;
     }
@@ -197,7 +197,7 @@ class ScanTUI(App):
         border: round #2f343a;
         height: 12;
         padding: 1 1;
-        margin: 1 2;
+        margin-top: 1;
     }
 
     #status_bar {
@@ -215,6 +215,7 @@ class ScanTUI(App):
         ("q", "quit", "Quit"),
         ("r", "refresh_scanners", "Refresh Scanners"),
         ("c", "clear_log", "Clear Log"),
+        ("b", "back", "Back"),
     ]
 
     def __init__(self) -> None:
@@ -226,18 +227,18 @@ class ScanTUI(App):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with Horizontal(id="main"):
-            with Vertical(id="left"):
+            with Vertical(id="select_panel"):
                 yield Static("Scanner", classes="section-title")
                 yield Label("Available devices", classes="field-label")
                 yield Select(options=[], id="scanner_select")
-                yield Label("Device details", classes="field-label")
-                yield Static("No scanner selected.", id="scanner_detail")
-                with Horizontal(id="left_actions"):
+                with Horizontal(id="select_actions"):
                     yield Button("Refresh", id="refresh", variant="primary")
                     yield Button("Continue", id="continue_button", variant="success")
-                    yield Button("Back", id="back_button", variant="default")
-            with Vertical(id="right"):
+                yield Label("Select a scanner to continue.", id="select_status")
+            with Vertical(id="scan_panel"):
                 yield Static("Scan Settings", classes="section-title")
+                yield Label("Selected scanner", classes="field-label")
+                yield Static("-", id="selected_scanner")
                 yield Label("File name prefix", classes="field-label")
                 yield Input(value="scan", id="prefix_input", placeholder="scan")
                 yield Label("Output directory", classes="field-label")
@@ -283,14 +284,15 @@ class ScanTUI(App):
                     id="extra_input",
                     placeholder="e.g. --brightness 10 --contrast 5",
                 )
-                with Horizontal(id="right_actions"):
+                with Horizontal(id="scan_actions"):
                     yield Button("Scan (Space)", id="scan_button", variant="success")
+                    yield Button("Back", id="back_button", variant="default")
                     yield Button("Clear Log", id="clear_log", variant="default")
                 with Horizontal(id="status_bar"):
                     yield Label("Idle", id="status_label")
                     yield LoadingIndicator(id="spinner")
                     yield Label("↑/↓ focus  Enter activate  Space scan", id="hint_label")
-        yield RichLog(id="log", highlight=True)
+                yield RichLog(id="log", highlight=True)
         yield Footer()
 
     async def on_mount(self) -> None:
@@ -323,20 +325,19 @@ class ScanTUI(App):
         spinner = self.query_one("#spinner", LoadingIndicator)
         spinner.display = busy
 
+    def set_select_status(self, message: str) -> None:
+        self.query_one("#select_status", Label).update(message)
+
     def _set_stage(self, stage: str) -> None:
         self._stage = stage
         is_select = stage == "select"
-        right = self.query_one("#right", Vertical)
-        log = self.query_one("#log", RichLog)
-        back = self.query_one("#back_button", Button)
-        cont = self.query_one("#continue_button", Button)
-
-        right.styles.display = "none" if is_select else "block"
-        log.styles.display = "none" if is_select else "block"
-        back.styles.display = "none" if is_select else "block"
-        cont.styles.display = "block" if is_select else "none"
+        select_panel = self.query_one("#select_panel", Vertical)
+        scan_panel = self.query_one("#scan_panel", Vertical)
+        select_panel.styles.display = "block" if is_select else "none"
+        scan_panel.styles.display = "none" if is_select else "block"
         if is_select:
             self.set_status("Select a scanner", busy=False)
+            self.set_select_status("Select a scanner to continue.")
 
     def _set_select_options(self, options: Iterable[Tuple[str, str]]) -> None:
         select = self.query_one("#scanner_select", Select)
@@ -357,6 +358,7 @@ class ScanTUI(App):
 
     async def action_refresh_scanners(self) -> None:
         self.set_status("Refreshing scanners…", busy=True)
+        self.set_select_status("Scanning for devices…")
         self.log_message("[bold]Scanning for devices…[/bold]")
         try:
             result = await asyncio.to_thread(
@@ -368,15 +370,18 @@ class ScanTUI(App):
             )
         except FileNotFoundError:
             self.set_status("scanimage not found", busy=False)
+            self.set_select_status("scanimage not found.")
             self.log_message("[red]Error:[/red] scanimage not found. Install SANE tools.")
             return
         except subprocess.TimeoutExpired:
             self.set_status("Scan timed out", busy=False)
+            self.set_select_status("scanimage -L timed out.")
             self.log_message("[red]Error:[/red] scanimage -L timed out.")
             return
 
         if result.returncode != 0:
             self.set_status("Scan failed", busy=False)
+            self.set_select_status("scanimage -L failed.")
             self.log_message(f"[red]scanimage error:[/red] {result.stderr.strip() or result.stdout.strip()}")
             return
 
@@ -384,20 +389,22 @@ class ScanTUI(App):
         self._scanners = scanners
         if not scanners:
             self._set_select_options([])
-            self.query_one("#scanner_detail", Static).update("No scanners found.")
+            self.query_one("#selected_scanner", Static).update("-")
             self.set_status("No scanners found", busy=False)
+            self.set_select_status("No scanners found.")
             self.log_message("[yellow]No scanners detected.[/yellow]")
             return
 
         options = [(f"{s.name} [{short_device(s.device)}]", s.device) for s in scanners]
         self._set_select_options(options)
         self.set_status(f"Found {len(scanners)} scanner(s)", busy=False)
+        self.set_select_status(f"Found {len(scanners)} scanner(s).")
         self._update_scanner_detail(self.active_device())
 
     def _update_scanner_detail(self, device: Optional[str]) -> None:
-        detail = self.query_one("#scanner_detail", Static)
+        detail = self.query_one("#selected_scanner", Static)
         if not device:
-            detail.update("No scanner selected.")
+            detail.update("-")
             return
         scanner = next((s for s in self._scanners if s.device == device), None)
         if not scanner:
@@ -484,6 +491,9 @@ class ScanTUI(App):
         self.query_one("#log", RichLog).clear()
         self.log_message("Log cleared.")
 
+    async def action_back(self) -> None:
+        self._set_stage("select")
+
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "refresh":
             await self.action_refresh_scanners()
@@ -495,6 +505,7 @@ class ScanTUI(App):
             device = self.active_device()
             if not device:
                 self.log_message("[red]Select a scanner first.[/red]")
+                self.set_select_status("Select a scanner to continue.")
                 return
             self._set_stage("scan")
         elif event.button.id == "back_button":
