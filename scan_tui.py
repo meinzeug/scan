@@ -401,7 +401,9 @@ class ScanTUI(App):
 
     def set_last_error(self, message: str) -> None:
         self._last_error = message
-        self.query_one("#last_error", Static).update(message)
+        label = self.query_one("#last_error", Static)
+        label.update(message)
+        label.styles.color = "red" if message and message != "-" else "#9aa2ad"
         if message and message != "-":
             self.log_message(f"[red]Last error:[/red] {message}")
 
